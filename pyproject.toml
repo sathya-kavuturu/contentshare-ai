@@ -1,0 +1,99 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "contentshare"
+version = "0.1.0"
+description = "Turns department content-request emails into verified copies and in-thread replies."
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.9",
+    "pyyaml>=6.0",
+    "xxhash>=3.4",
+    "blake3>=0.4",
+    "rapidfuzz>=3.9",
+    "google-api-python-client>=2.100",
+    "google-auth-oauthlib>=1.2",
+    "keyring>=25",
+    "PySide6-Essentials>=6.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-qt>=4.4",
+    "pytest-cov>=5",
+    "hypothesis>=6.100",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "types-PyYAML",
+    "bandit>=1.7",
+    "pip-audit>=2.7",
+]
+# Only needed to build the Windows program (python packaging/build.py).
+build = [
+    "pyinstaller>=6.16",
+    "markdown>=3.6",
+]
+
+[project.scripts]
+contentshare-admin = "contentshare.cli:main"
+
+[project.gui-scripts]
+contentshare = "contentshare.ui.app:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+contentshare = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers -m 'not slow'"
+markers = ["slow: multi-GB tests; run with -m slow"]
+
+[tool.coverage.run]
+source = ["contentshare"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+fail_under = 85
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF", "PTH", "N", "C4", "PL"]
+ignore = [
+    "PLR0913",  # config models legitimately take many fields
+    "PLR2004",  # magic values are fine in validators with named constants nearby
+    "PLR0917",  # same reasoning as PLR0913
+]
+
+[tool.ruff.lint.per-file-ignores]
+# The engine must pass "\\?\..." strings to os.* for long-path support; pathlib would strip that.
+"src/contentshare/copy_engine/*.py" = ["PTH"]
+# The fake Gmail copies Google's camelCase parameter names (userId, maxResults) on purpose.
+"tests/fake_gmail.py" = ["N802", "N803", "E501"]
+"tests/**" = ["S101", "S108", "PLR2004", "S105", "S106", "RUF059", "PLC0415", "PTH103"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+mypy_path = "src"
+packages = ["contentshare"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+# Google's client libraries ship no type information.
+module = ["googleapiclient.*", "google_auth_oauthlib.*", "google.oauth2.*", "google.auth.*", "httplib2"]
+ignore_missing_imports = true
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv"]

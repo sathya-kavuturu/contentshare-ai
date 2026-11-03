@@ -1,0 +1,1 @@
+"""Security helpers (path safety)."""

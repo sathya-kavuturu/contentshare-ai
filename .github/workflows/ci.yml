@@ -1,0 +1,129 @@
+name: CI
+
+# Every push and pull request: lint, types, tests, security scans, then build the program and
+# installer. A push to main that passes everything also publishes a GitHub Release.
+
+on:
+  push:
+    branches: ["**"]
+    tags-ignore: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The version the program was developed and tested on. (pyproject still allows >=3.12.)
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # gitleaks scans history
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Lint
+        run: |
+          ruff check src tests packaging
+          ruff format --check src tests packaging
+      - name: Types (strict)
+        run: mypy
+      - name: Tests + coverage
+        run: pytest --cov
+      - name: Security — bandit
+        run: bandit -q -r src packaging -c pyproject.toml
+      - name: Security — dependency audit
+        run: pip-audit --skip-editable
+      - name: Security — secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  package:
+    # Builds the Windows program and installer, and fails if the built program's own
+    # self-test fails. Needs the tests to pass first.
+    needs: test
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: python -m pip install -e ".[build]"
+      - name: Choose the version
+        id: version
+        shell: pwsh
+        run: |
+          # 0.1.0 in the source is the base: its major.minor stay, the last number becomes the
+          # run number, so every push gets a version nobody has used before (0.1.7, 0.1.8, ...).
+          $base = python -c "import contentshare; print('.'.join(contentshare.__version__.split('.')[:2]))"
+          $version = "$base.$env:GITHUB_RUN_NUMBER"
+          $file = "src\contentshare\__init__.py"
+          (Get-Content $file) -replace '^__version__ = ".*"', "__version__ = `"$version`"" | Set-Content $file
+          python -c "import contentshare; print(contentshare.__version__)"
+          "version=$version" >> $env:GITHUB_OUTPUT
+      - name: Build program (runs --selftest on the result)
+        run: python packaging/build.py
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $iscc = (Get-Command iscc -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) {
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          }
+          & $iscc "/DAppVersion=${{ steps.version.outputs.version }}" installer\contentshare.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+      - name: Checksums
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\ContentShare-Setup-*.exe
+          $hash = (Get-FileHash $setup -Algorithm SHA256).Hash.ToLower()
+          "$hash  $($setup.Name)" | Set-Content dist\SHA256SUMS.txt -Encoding ascii
+          Get-Content dist\SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ContentShare-Setup
+          path: |
+            dist/ContentShare-Setup-*.exe
+            dist/SHA256SUMS.txt
+
+  release:
+    # Only for a push to main, and only after everything above passed.
+    needs: package
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the tag and the release; nothing else gets write access
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ContentShare-Setup
+          path: release
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          gh release create "v$VERSION" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "ContentShare $VERSION" \
+            --generate-notes \
+            --notes "Windows installer for ContentShare $VERSION. It is not code-signed, so Windows SmartScreen will warn: choose More info, then Run anyway. Check the download against SHA256SUMS.txt."

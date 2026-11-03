@@ -1,0 +1,183 @@
+"""Small dialogs: pick other content, edit the destination, preview a reply, reject."""
+
+from __future__ import annotations
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDialog,
+    QDialogButtonBox,
+    QFileDialog,
+    QFormLayout,
+    QHBoxLayout,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QPlainTextEdit,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+
+from contentshare.app.controller import CandidateView, Controller, RequestView
+from contentshare.copy_engine import format_bytes
+from contentshare.gmail.replies import ReplyDraft
+from contentshare.ui.status import confidence_dots
+from contentshare.ui.widgets import Label as QLabel
+
+
+def _buttons(dialog: QDialog, ok_text: str, cancel_text: str = "Cancel") -> QDialogButtonBox:
+    box = QDialogButtonBox()
+    ok = box.addButton(ok_text, QDialogButtonBox.ButtonRole.AcceptRole)
+    ok.setProperty("primary", True)
+    box.addButton(cancel_text, QDialogButtonBox.ButtonRole.RejectRole)
+    box.accepted.connect(dialog.accept)
+    box.rejected.connect(dialog.reject)
+    return box
+
+
+class CandidateDialog(QDialog):
+    """Choose which content satisfies the request: the suggestions, or a manual search."""
+
+    def __init__(self, controller: Controller, view: RequestView, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Choose content for request #{view.id}")
+        self.resize(760, 480)
+        self._controller, self._view = controller, view
+        self.chosen: CandidateView | None = None
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(f"Requested: {view.requested}"))
+        row = QHBoxLayout()
+        self.query = QLineEdit(placeholderText="Search the storage server by name…")
+        self.query.returnPressed.connect(self._search)
+        go = QPushButton("Search")
+        go.clicked.connect(self._search)
+        row.addWidget(self.query, 1)
+        row.addWidget(go)
+        layout.addLayout(row)
+        self.results = QListWidget()
+        self.results.setAccessibleName("Matching content")
+        self.results.itemDoubleClicked.connect(lambda _i: self.accept())
+        layout.addWidget(self.results, 1)
+        self.hint = QLabel()
+        self.hint.setProperty("role", "muted")
+        layout.addWidget(self.hint)
+        layout.addWidget(_buttons(self, "Use selected content"))
+        self._show(list(view.candidates), "Suggestions from the email. Search to look for others.")
+
+    def _search(self) -> None:
+        text = self.query.text().strip()
+        if not text:
+            return
+        found = self._controller.search(self._view.id, text)
+        self._show(found, f"{len(found)} result(s)" if found else "Nothing found for that name.")
+
+    def _show(self, candidates: list[CandidateView], hint: str) -> None:
+        self.results.clear()
+        for c in candidates:
+            item = QListWidgetItem(
+                f"{c.path}\n    {format_bytes(c.size)} · {c.file_count} file(s) · "
+                f"{confidence_dots(c.score)}" + (f" · {'; '.join(c.notes)}" if c.notes else "")
+            )
+            item.setData(Qt.ItemDataRole.UserRole, c)
+            self.results.addItem(item)
+        if self.results.count():
+            self.results.setCurrentRow(0)
+        self.hint.setText(hint)
+
+    def accept(self) -> None:
+        item = self.results.currentItem()
+        if item is None:
+            return
+        self.chosen = item.data(Qt.ItemDataRole.UserRole)
+        super().accept()
+
+
+class DestinationDialog(QDialog):
+    def __init__(self, root: str, current: str, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("Copy to")
+        self.resize(640, 140)
+        self._root = root
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(f"Must be inside the department folder:\n{root}"))
+        row = QHBoxLayout()
+        self.path = QLineEdit(current)
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(self._browse)
+        row.addWidget(self.path, 1)
+        row.addWidget(browse)
+        layout.addLayout(row)
+        layout.addWidget(_buttons(self, "Use this folder"))
+
+    def _browse(self) -> None:
+        start = self.path.text() or self._root
+        chosen = QFileDialog.getExistingDirectory(self, "Choose the destination folder", start)
+        if chosen:
+            self.path.setText(chosen.replace("/", "\\"))
+
+    def value(self) -> str:
+        return self.path.text().strip()
+
+
+class ReplyDialog(QDialog):
+    """The “content shared” message, editable before it is sent."""
+
+    def __init__(
+        self,
+        draft: ReplyDraft,
+        *,
+        summary: str,
+        dry_run: bool = False,
+        parent: QWidget | None = None,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Reply to the requester")
+        self.resize(640, 460)
+        self._draft = draft
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        form.addRow("To:", QLabel(draft.to_addr))
+        form.addRow("Subject:", QLabel(draft.subject))
+        layout.addLayout(form)
+        self.body = QPlainTextEdit(draft.body)
+        self.body.setAccessibleName("Reply text")
+        layout.addWidget(self.body, 1)
+        note = QLabel(summary)
+        note.setProperty("role", "muted")
+        note.setWordWrap(True)
+        layout.addWidget(note)
+        if dry_run:
+            banner = QLabel("Dry-run mode is on: nothing can be sent.")
+            banner.setObjectName("banner")
+            layout.addWidget(banner)
+        box = _buttons(self, "Send reply", "Not now")
+        if dry_run:
+            box.buttons()[0].setEnabled(False)
+        layout.addWidget(box)
+
+    def draft(self) -> ReplyDraft:
+        return self._draft.with_body(self.body.toPlainText())
+
+
+class RejectDialog(QDialog):
+    def __init__(self, view: RequestView, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Reject request #{view.id}")
+        self.resize(520, 300)
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel(f"{view.sender_name or view.sender_email}: {view.requested}"))
+        self.reason = QLineEdit(placeholderText="Reason (kept in the history)")
+        layout.addWidget(self.reason)
+        self.notify = QCheckBox("Also send a reply to the requester")
+        layout.addWidget(self.notify)
+        self.text = QPlainTextEdit()
+        self.text.setPlaceholderText("Message to send (leave empty for the standard wording)")
+        self.text.setEnabled(False)
+        self.notify.toggled.connect(self.text.setEnabled)
+        layout.addWidget(self.text, 1)
+        layout.addWidget(_buttons(self, "Reject request"))
+
+    def result_values(self) -> tuple[str, bool, str]:
+        return self.reason.text().strip(), self.notify.isChecked(), self.text.toPlainText().strip()

@@ -1,0 +1,456 @@
+"""One request line as a card: what was asked, what was found, and what you can do about it."""
+
+from __future__ import annotations
+
+import re
+from collections.abc import Callable
+from dataclasses import dataclass
+from functools import partial
+
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QFrame,
+    QHBoxLayout,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
+from shiboken6 import isValid
+
+from contentshare.app.controller import ApproveResult, RequestView
+from contentshare.copy_engine import format_bytes
+from contentshare.gmail.replies import ReplyResult
+from contentshare.ui.context import UiContext
+from contentshare.ui.dialogs import (
+    CandidateDialog,
+    DestinationDialog,
+    RejectDialog,
+    ReplyDialog,
+)
+from contentshare.ui.status import confidence_dots, style_for
+from contentshare.ui.widgets import Label as QLabel
+from contentshare.ui.widgets import SafeMessageBox as QMessageBox
+
+_GMAIL_ID = re.compile(r"^[0-9a-f]{6,32}$")
+OPEN_STATES = {"NEW", "NEEDS_REVIEW", "READY", "APPROVED", "COPYING", "FAILED", "VERIFIED"}
+
+
+@dataclass
+class CardState:
+    """What the user has ticked, kept across list refreshes."""
+
+    selected: bool = False
+    confirm: bool = False
+    acknowledge: bool = False
+    show_text: bool = False
+
+
+def _label(text: str = "", role: str | None = None, wrap: bool = True) -> QLabel:
+    label = QLabel(text)
+    label.setWordWrap(wrap)
+    if role:
+        label.setProperty("role", role)
+    return label
+
+
+def _chip(text: str, tone: str) -> QLabel:
+    chip = QLabel(text)
+    chip.setProperty("tone", tone)
+    return chip
+
+
+def _button(
+    text: str, slot: Callable[[], None], *, primary: bool = False, danger: bool = False
+) -> QPushButton:
+    button = QPushButton(text)
+    if primary:
+        button.setProperty("primary", True)
+    if danger:
+        button.setProperty("danger", True)
+    button.clicked.connect(lambda _checked=False: slot())
+    return button
+
+
+def gmail_url(message_id: str) -> QUrl | None:
+    """Link to the email in Gmail. The id comes from Gmail, but is checked before it goes
+    into a URL."""
+    if not _GMAIL_ID.match(message_id):
+        return None
+    return QUrl(f"https://mail.google.com/mail/u/0/#all/{message_id}")
+
+
+class RequestCard(QFrame):
+    def __init__(
+        self,
+        view: RequestView,
+        ctx: UiContext,
+        state: CardState,
+        *,
+        on_selection_changed: Callable[[], None],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.view, self.ctx, self.state = view, ctx, state
+        self._on_selection = on_selection_changed
+        self.setObjectName("card")
+        self.setAccessibleName(f"Request {view.id}")
+        self._buttons: list[QPushButton] = []
+        self._build()
+
+    # ------------------------------------------------------------------ layout
+    def _build(self) -> None:
+        v = self.view
+        root = QVBoxLayout(self)
+        root.setContentsMargins(14, 12, 14, 12)
+        root.setSpacing(4)
+
+        head = QHBoxLayout()
+        self.select = QCheckBox()
+        self.select.setAccessibleName(f"Select request {v.id}")
+        self.select.setChecked(self.state.selected)
+        self.select.toggled.connect(self._toggle_selected)
+        head.addWidget(self.select)
+        head.addWidget(_label(f"#{v.id}", wrap=False))
+        style = style_for(v.state)
+        self.status = _chip(style.text, style.tone)
+        head.addWidget(self.status)
+        if v.verified_sender:
+            head.addWidget(_chip("✔ Sender verified", "neutral"))
+        else:
+            head.addWidget(_chip("⚠ Sender NOT verified", "warn"))
+        head.addStretch(1)
+        head.addWidget(_label(v.received_at[:16].replace("T", " "), "muted", wrap=False))
+        root.addLayout(head)
+
+        who = f"{v.sender_name} <{v.sender_email}>" if v.sender_name else v.sender_email
+        root.addWidget(_label(f"From  {who}  ·  {v.department or 'not in any department'}"))
+        self._subject_row(root)
+        root.addWidget(_label(f"Requested  {v.requested}"))
+        if v.reason:
+            root.addWidget(_label(v.reason, "muted"))
+        for warning in v.warnings:
+            root.addWidget(_chip(f"⚠ {warning}", "warn"))
+
+        {
+            "NEEDS_REVIEW": self._review_section,
+            "READY": self._ready_section,
+            "FAILED": self._failed_section,
+            "APPROVED": self._copying_section,
+            "COPYING": self._copying_section,
+            "VERIFIED": self._verified_section,
+        }.get(v.state, self._finished_section)(root)
+
+    def _subject_row(self, root: QVBoxLayout) -> None:
+        row = QHBoxLayout()
+        row.addWidget(_label(f"Re  “{self.view.subject}”"), 1)
+        self.text_toggle = QPushButton("▸ Show text")
+        self.text_toggle.setFlat(True)
+        self.text_toggle.setAccessibleName("Show the start of the email")
+        self.text_toggle.clicked.connect(self._toggle_text)
+        row.addWidget(self.text_toggle)
+        root.addLayout(row)
+        self.snippet = _label(self.view.snippet or "(no text)", "muted")
+        self.snippet.setVisible(self.state.show_text)
+        root.addWidget(self.snippet)
+
+    def _add_actions(self, root: QVBoxLayout, *buttons: QPushButton) -> None:
+        row = QHBoxLayout()
+        for button in buttons:
+            self._buttons.append(button)
+            row.addWidget(button)
+        gmail = _button("Open email in Gmail", self._open_gmail)
+        row.addWidget(gmail)
+        row.addStretch(1)
+        root.addLayout(row)
+
+    # ------------------------------------------------------------------ state sections
+    def _review_section(self, root: QVBoxLayout) -> None:
+        v = self.view
+        if v.candidates:
+            root.addWidget(_label("Top matches", "muted"))
+        for candidate in v.candidates[:5]:
+            row = QHBoxLayout()
+            use = _button("Use this", partial(self._choose, candidate.item_id))
+            use.setAccessibleName(f"Use {candidate.path}")
+            self._buttons.append(use)
+            row.addWidget(use)
+            info = _label(
+                f"{candidate.path}\n{format_bytes(candidate.size)} · {candidate.file_count} file(s)"
+                f" · {confidence_dots(candidate.score)}"
+                + (f" · {'; '.join(candidate.notes)}" if candidate.notes else "")
+            )
+            info.setProperty("role", "path")
+            row.addWidget(info, 1)
+            root.addLayout(row)
+        self._add_actions(
+            root,
+            _button("Search manually…", self._search_manually, primary=not v.candidates),
+            _button("Skip", self._skip),
+            _button("Reject…", self._reject, danger=True),
+        )
+
+    def _ready_section(self, root: QVBoxLayout) -> None:
+        v = self.view
+        found = _label(f"Found  {v.source_path}", "path")
+        root.addWidget(found)
+        root.addWidget(
+            _label(
+                f"{v.size_text} · {v.file_count} file(s) · "
+                f"confidence {confidence_dots(v.confidence)}",
+                "muted",
+            )
+        )
+        copy_to = _label(f"Copy to  {v.destination_path}", "path")
+        root.addWidget(copy_to)
+        row = QHBoxLayout()
+        row.addWidget(_button("Change content…", self._search_manually))
+        row.addWidget(_button("Edit destination…", self._edit_destination))
+        row.addStretch(1)
+        root.addLayout(row)
+
+        self.confirm = QCheckBox("Confirm copy")
+        self.confirm.setChecked(self.state.confirm)
+        self.confirm.toggled.connect(self._toggle_confirm)
+        root.addWidget(self.confirm)
+        self.auto = QCheckBox("Send the reply automatically when the copy is verified")
+        self.auto.setChecked(v.auto_reply)
+        self.auto.toggled.connect(self._toggle_auto)
+        root.addWidget(self.auto)
+        self.ack: QCheckBox | None = None
+        if not v.verified_sender:
+            self.ack = QCheckBox("I checked this sender in Gmail and it is genuine")
+            self.ack.setChecked(self.state.acknowledge)
+            self.ack.toggled.connect(self._toggle_ack)
+            root.addWidget(self.ack)
+        verb = "Check (dry run)" if self.ctx.controller.dry_run else "Approve and copy"
+        self._add_actions(
+            root,
+            _button(verb, self._approve, primary=True),
+            _button("Skip", self._skip),
+            _button("Reject…", self._reject, danger=True),
+        )
+
+    def _failed_section(self, root: QVBoxLayout) -> None:
+        v = self.view
+        root.addWidget(_chip(f"✖ {v.failure_reason or 'The copy failed'}", "error"))
+        root.addWidget(_label("No “shared” reply can be sent until a copy is verified.", "muted"))
+        self._add_actions(
+            root,
+            _button("Retry copy", self._retry, primary=True),
+            _button("Change content…", self._search_manually),
+            _button("Skip", self._skip),
+        )
+
+    def _copying_section(self, root: QVBoxLayout) -> None:
+        root.addWidget(_label("Copying. Progress is on the Active copies screen.", "muted"))
+        self._add_actions(root)
+
+    def _verified_section(self, root: QVBoxLayout) -> None:
+        v = self.view
+        root.addWidget(
+            _label(
+                f"✔✔ {v.file_count} file(s), {v.size_text} copied to {v.destination_path} "
+                "and checked against the original.",
+            )
+        )
+        self._add_actions(root, _button("Preview and send reply…", self._reply, primary=True))
+
+    def _finished_section(self, root: QVBoxLayout) -> None:
+        v = self.view
+        if v.destination_path and v.state == "REPLIED":
+            root.addWidget(_label(f"Delivered to {v.destination_path}", "muted"))
+        self._add_actions(root)
+
+    # ------------------------------------------------------------------ small slots
+    def _toggle_selected(self, on: bool) -> None:
+        self.state.selected = on
+        self._on_selection()
+
+    def _toggle_confirm(self, on: bool) -> None:
+        self.state.confirm = on
+
+    def _toggle_ack(self, on: bool) -> None:
+        self.state.acknowledge = on
+
+    def _toggle_text(self) -> None:
+        self.state.show_text = not self.state.show_text
+        self.snippet.setVisible(self.state.show_text)
+        self.text_toggle.setText("▾ Hide text" if self.state.show_text else "▸ Show text")
+
+    def _toggle_auto(self, on: bool) -> None:
+        try:
+            self.ctx.controller.set_auto_reply(self.view.id, on)
+        except Exception as exc:
+            self.ctx.fail(self, "Cannot change this", exc)
+
+    def _open_gmail(self) -> None:
+        url = gmail_url(self.view.gmail_message_id)
+        if url is None:
+            QMessageBox.information(self, "Open email", "Gmail's link for this email is missing.")
+        else:
+            QDesktopServices.openUrl(url)
+
+    def _alive(self) -> bool:
+        """The list is rebuilt when anything changes, so a card can be gone by the time a
+        background job reports back."""
+        return isValid(self)
+
+    def _owner(self) -> QWidget | None:
+        return self if self._alive() else self.ctx.owner
+
+    def _busy(self, on: bool) -> None:
+        if not self._alive():
+            return
+        for button in self._buttons:
+            button.setEnabled(not on)
+
+    def _on_error(self, title: str) -> Callable[[Exception], None]:
+        def handler(exc: Exception) -> None:
+            self._busy(False)
+            self.ctx.fail(self._owner(), title, exc)
+
+        return handler
+
+    # ------------------------------------------------------------------ actions
+    def _search_manually(self) -> None:
+        dialog = CandidateDialog(self.ctx.controller, self.view, self)
+        if dialog.exec() and dialog.chosen is not None:
+            self._choose(dialog.chosen.item_id)
+
+    def _choose(self, item_id: int | None) -> None:
+        if item_id is None:
+            return
+        self._busy(True)
+        self.ctx.bridge.work(
+            lambda: self.ctx.controller.choose(self.view.id, item_id),
+            on_done=lambda _r: self.ctx.say(f"Request #{self.view.id}: content chosen"),
+            on_error=self._on_error("Cannot use that"),
+        )
+
+    def _edit_destination(self) -> None:
+        dept = next(
+            (d for d in self.ctx.controller.config.departments if d.name == self.view.department),
+            None,
+        )
+        if dept is None:
+            QMessageBox.warning(
+                self, "Destination", "This sender's department is not in the settings."
+            )
+            return
+        dialog = DestinationDialog(dept.destination_root, self.view.destination_path or "", self)
+        if dialog.exec():
+            try:
+                self.ctx.controller.set_destination(self.view.id, dialog.value())
+            except Exception as exc:
+                self.ctx.fail(self, "Cannot use that folder", exc)
+
+    def _approve(self) -> None:
+        self._busy(True)
+        confirmed = self.state.confirm
+        acknowledged = self.state.acknowledge
+        self.ctx.bridge.work(
+            lambda: self.ctx.controller.approve(
+                self.view.id, confirmed=confirmed, acknowledge_unverified=acknowledged
+            ),
+            on_done=self._approved,
+            on_error=self._on_error("Cannot approve"),
+        )
+
+    def _approved(self, result: ApproveResult) -> None:
+        self._busy(False)
+        if not result.dry_run:
+            self.ctx.say(f"Request #{self.view.id}: copy started. {result.note}".strip())
+        else:
+            lines = [f"{result.files} file(s), {format_bytes(result.total_bytes)} would be copied."]
+            if result.note:
+                lines.append(result.note)
+            if result.problems:
+                lines += [
+                    "",
+                    "Problems that would stop the copy:",
+                    *[f"• {p}" for p in result.problems],
+                ]
+            else:
+                lines.append("No problems found. Nothing was copied.")
+            QMessageBox.information(self._owner(), "Dry run", "\n".join(lines))
+
+    def _retry(self) -> None:
+        try:
+            self.ctx.controller.retry(self.view.id)
+            self.ctx.say(f"Request #{self.view.id}: copy restarted")
+        except Exception as exc:
+            self.ctx.fail(self, "Cannot retry", exc)
+
+    def _skip(self) -> None:
+        answer = QMessageBox.question(
+            self, "Skip request", f"Skip request #{self.view.id}? It will be kept in the history."
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            try:
+                self.ctx.controller.skip(self.view.id)
+            except Exception as exc:
+                self.ctx.fail(self, "Cannot skip", exc)
+
+    def _reject(self) -> None:
+        dialog = RejectDialog(self.view, self)
+        if not dialog.exec():
+            return
+        reason, notify, text = dialog.result_values()
+        try:
+            self.ctx.controller.reject(self.view.id, reason)
+        except Exception as exc:
+            self.ctx.fail(self, "Cannot reject", exc)
+            return
+        if notify:
+            self._send_rejection(text)
+
+    def _send_rejection(self, text: str) -> None:
+        def job() -> ReplyResult:
+            c = self.ctx.controller
+            return c.send_reply(c.rejection_draft(self.view.id, text or None))
+
+        self.ctx.bridge.work(
+            job,
+            on_done=lambda r: self.ctx.say(f"Rejection reply: {r.status.lower()}"),
+            on_error=self._on_error("The rejection reply was not sent"),
+        )
+
+    def _reply(self) -> None:
+        try:
+            draft = self.ctx.controller.reply_draft(self.view.id)
+        except Exception as exc:
+            self.ctx.fail(self, "Cannot prepare the reply", exc)
+            return
+        summary = (
+            f"✔ All {self.view.file_count} file(s) were verified. The reply goes to "
+            f"{draft.to_addr} in the same Gmail conversation."
+        )
+        dialog = ReplyDialog(
+            draft, summary=summary, dry_run=self.ctx.controller.dry_run, parent=self
+        )
+        if not dialog.exec():
+            return
+        edited = dialog.draft()
+        self._busy(True)
+        self.ctx.bridge.work(
+            lambda: self.ctx.controller.send_reply(edited),
+            on_done=self._replied,
+            on_error=self._on_error("Reply not sent"),
+        )
+
+    def _replied(self, result: ReplyResult) -> None:
+        self._busy(False)
+        if result.status == "SENT":
+            self.ctx.say(f"Request #{self.view.id}: reply sent")
+        elif result.status == "UNCERTAIN":
+            QMessageBox.warning(
+                self._owner(), "Reply status unknown",
+                "Gmail could not be reached to confirm whether the reply was sent. "
+                "ContentShare will check again later and will not send it twice.",
+            )  # fmt: skip
+        else:
+            QMessageBox.warning(
+                self._owner(), "Reply not sent", result.error or "The reply was not sent."
+            )

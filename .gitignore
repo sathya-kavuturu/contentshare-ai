@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+htmlcov/
+coverage.xml
+
+# Secrets — never commit Google OAuth client files or tokens
+client_secret*.json
+credentials*.json
+token*.json
+*.pem
+*.pfx
+*.p12
+*.snk
+.env
+.env.*
+
+# Local runtime data (lives in %APPDATA% / %LOCALAPPDATA% normally)
+*.db
+*.db-wal
+*.db-shm
+*.log
+*.cspartial
+
+# Real request emails stay local; only synthetic fixtures are committed
+tests/fixtures/emails/real/

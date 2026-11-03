@@ -1,0 +1,259 @@
+[
+  {
+    "name": "simple request with a date",
+    "today": "2026-11-03",
+    "subject": "Request for Sunrise Talk recording 12 Oct",
+    "body": "Hi team,\n\nPlease share the video.\n\nRegards,\nAnita",
+    "expect": [
+      {
+        "program": "Sunrise Talk",
+        "dates": [
+          "2026-10-12"
+        ],
+        "language": null,
+        "formats": [
+          "video"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "generic subject, details in the body",
+    "today": "2026-11-03",
+    "subject": "Content request",
+    "body": "Hello,\nKindly send the Youth Retreat Day 2 footage in Hindi (mp4).\nThanks",
+    "expect": [
+      {
+        "program": "Youth Retreat",
+        "dates": [],
+        "language": "hindi",
+        "part": [
+          "day",
+          2
+        ],
+        "formats": [
+          "video"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "bulleted list of items",
+    "today": "2026-11-03",
+    "subject": "Need recordings",
+    "body": "Dear team,\nWe need the following:\n- Sunrise Talk 12/10/2026 EN\n- Sunrise Talk 19 Oct 2026 HI\n- \"Annual Day\" 2025 photos\nThank you",
+    "expect": [
+      {
+        "program": "Sunrise Talk",
+        "dates": [
+          "2026-10-12"
+        ],
+        "language": "english"
+      },
+      {
+        "program": "Sunrise Talk",
+        "dates": [
+          "2026-10-19"
+        ],
+        "language": "hindi"
+      },
+      {
+        "program": "Annual Day",
+        "dates": [],
+        "formats": [
+          "photos"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "quoted reply and old dates are ignored",
+    "today": "2026-11-03",
+    "subject": "Re: Annual Day",
+    "body": "Please share the Annual Day program of last Sunday.\n\n> On Mon, X wrote:\n> old text 5 Jan 2020\n\nOn Mon, 2 Nov 2026, Someone wrote:\nolder text 9 Feb 2019",
+    "expect": [
+      {
+        "program": "Annual Day",
+        "dates": [
+          "2026-11-01"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "two dates become two request lines",
+    "today": "2026-11-03",
+    "subject": "URGENT",
+    "body": "Need \"Morning Satsang\" content for 12 Oct and 19 Oct, audio only. Link: https://x.example/a",
+    "expect": [
+      {
+        "program": "Morning Satsang",
+        "dates": [
+          "2026-10-12"
+        ],
+        "formats": [
+          "audio"
+        ]
+      },
+      {
+        "program": "Morning Satsang",
+        "dates": [
+          "2026-10-19"
+        ],
+        "formats": [
+          "audio"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "nothing to go on",
+    "today": "2026-11-03",
+    "subject": "Hi",
+    "body": "Hi, can you help me?",
+    "expect": [
+      {
+        "program": "",
+        "dates": []
+      }
+    ]
+  },
+  {
+    "name": "date range stays one line",
+    "today": "2026-11-03",
+    "subject": "Sunrise Talk 12-14 Oct",
+    "body": "",
+    "expect": [
+      {
+        "program": "Sunrise Talk",
+        "dates": [
+          "2026-10-12..2026-10-14"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "a greeting Hi is not Hindi",
+    "today": "2026-11-03",
+    "subject": "Sunrise Talk 12 Oct",
+    "body": "Hi team, please share.",
+    "expect": [
+      {
+        "program": "Sunrise Talk",
+        "language": null
+      }
+    ]
+  },
+  {
+    "name": "capital HI is Hindi",
+    "today": "2026-11-03",
+    "subject": "Sunrise Talk 12 Oct HI",
+    "body": "",
+    "expect": [
+      {
+        "program": "Sunrise Talk",
+        "language": "hindi",
+        "dates": [
+          "2026-10-12"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "html-only body is reduced to text",
+    "today": "2026-11-03",
+    "subject": "Request",
+    "body": "<html><head><style>.x{color:red}</style></head><body><p>Please share <b>Sunrise Talk</b> for 12 Oct</p><script>alert('Annual Day')</script></body></html>",
+    "expect": [
+      {
+        "program": "Sunrise Talk",
+        "dates": [
+          "2026-10-12"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "links, signature and phone numbers are dropped",
+    "today": "2026-11-03",
+    "subject": "Annual Day video",
+    "body": "Please share the recording.\nhttps://evil.example/x?a=Sunrise Talk\nmail me at someone@example.org\n--\nAnita, Media Team\n+91 90000 00000 Sunrise Talk",
+    "expect": [
+      {
+        "program": "Annual Day"
+      }
+    ]
+  },
+  {
+    "name": "day-first numeric date",
+    "today": "2026-11-03",
+    "subject": "Annual Day 25/12/2025",
+    "body": "",
+    "expect": [
+      {
+        "program": "Annual Day",
+        "dates": [
+          "2025-12-25"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "part written as a word",
+    "today": "2026-11-03",
+    "subject": "Youth Retreat part two",
+    "body": "",
+    "expect": [
+      {
+        "program": "Youth Retreat",
+        "part": [
+          "part",
+          2
+        ]
+      }
+    ]
+  },
+  {
+    "name": "year-less date refers to the past, not next year",
+    "today": "2026-02-10",
+    "subject": "Sunrise Talk 20 Dec",
+    "body": "",
+    "expect": [
+      {
+        "program": "Sunrise Talk",
+        "dates": [
+          "2025-12-20"
+        ]
+      }
+    ]
+  },
+  {
+    "name": "same date in subject and body is one request, not two",
+    "today": "2026-11-03",
+    "subject": "Sunrise Talk 12 Oct",
+    "body": "Hi team,\nPlease share the English recording of Sunrise Talk from 12 Oct 2026.\nThanks",
+    "expect": [
+      {
+        "program": "Sunrise Talk",
+        "dates": [
+          "2026-10-12"
+        ],
+        "language": "english"
+      }
+    ]
+  },
+  {
+    "name": "same date written two ways is still one request",
+    "today": "2026-11-03",
+    "subject": "Annual Day 25/12/2025",
+    "body": "We need the video of 25 December 2025 please.",
+    "expect": [
+      {
+        "program": "Annual Day",
+        "dates": [
+          "2025-12-25"
+        ]
+      }
+    ]
+  }
+]
