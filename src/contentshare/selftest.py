@@ -107,6 +107,16 @@ def _copy_engine() -> str:
     return "copied and verified 2 files"
 
 
+def _help_text() -> str:
+    from contentshare.ui.help_page import load_topics  # noqa: PLC0415
+
+    slugs = {topic.slug for topic in load_topics()}
+    missing = {"start", "gmail", "use", "settings", "trouble"} - slugs
+    if missing:
+        raise RuntimeError(f"help text not found: {', '.join(sorted(missing))}")
+    return f"{len(slugs)} help topics bundled"
+
+
 def _windows_start() -> str:
     from contentshare.app.startup import StartAtLogin  # noqa: PLC0415
 
@@ -142,6 +152,7 @@ CHECKS: list[tuple[str, Callable[[], str]]] = [
     ("credential manager", _keyring),
     ("google client", _google_client),
     ("verified copy", _copy_engine),
+    ("help text", _help_text),
     ("windows start-up", _windows_start),
     ("user interface", _qt),
 ]

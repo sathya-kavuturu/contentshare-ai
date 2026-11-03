@@ -164,6 +164,8 @@ def build_exe(ver: str) -> None:
         # only the one API description this program uses (the library ships 600 of them)
         "--add-data",
         f"{gmail_doc / 'gmail.v1.json'}{os.pathsep}googleapiclient/discovery_cache/documents",
+        # the in-app Help text
+        "--add-data", f"{ROOT / 'src' / 'contentshare' / 'help'}{os.pathsep}contentshare/help",
         "--collect-submodules", "keyring.backends",
         "--hidden-import", "win32ctypes.pywin32.pywintypes",
         "--hidden-import", "win32ctypes.pywin32.win32cred",

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import QApplication
 from contentshare import __version__
 from contentshare.app.controller import Controller
 from contentshare.app.startup import BACKGROUND_FLAG, StartAtLogin
+from contentshare.app.updates import Updater
 from contentshare.config.store import (
     ConfigError,
     data_dir,
@@ -172,7 +173,10 @@ def _run(app: QApplication, instance: SingleInstance, *, background: bool) -> in
         log.info("no notification area available; running without a tray icon")
     automation = Automation(controller, bridge)
     startup = StartAtLogin()
-    window = MainWindow(controller, bridge, tray=tray, automation=automation, startup=startup)
+    updater = Updater(__version__, data_dir() / "updates")
+    window = MainWindow(
+        controller, bridge, tray=tray, automation=automation, startup=startup, updater=updater
+    )
     instance.show_requested.connect(window.show_window)
     instance.quit_requested.connect(window.quit_app)
     app.aboutToQuit.connect(window.cleanup)  # also runs when Windows signs the user out
@@ -182,6 +186,7 @@ def _run(app: QApplication, instance: SingleInstance, *, background: bool) -> in
         window.show()
     automation.start()
     window.update_chrome()
+    window.start_update_check()
 
     # After a crash or restart: finish what the user had already approved, and settle replies
     # that were half-sent. Nothing new is approved or sent here.

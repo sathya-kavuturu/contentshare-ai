@@ -20,7 +20,8 @@ in `%APPDATA%\ContentShare` unless you delete that folder yourself.
 
 ## 2. First start
 
-A short setup asks for **where the programs are stored** and **your first department** (its
+A short setup asks for **where the programs are stored** (you can add several folders, and edit or
+remove them with the **Edit** and **Remove** buttons) and **your first department** (its
 email addresses and the folder its copies go to). It starts in **dry-run mode**, which means
 approving a request only *checks* what would be copied. Nothing is copied or sent until you
 turn dry-run off in Settings → General.
@@ -83,6 +84,16 @@ Every request, with a step-by-step record of what happened. **Export CSV** saves
 * Pop-ups say things like "3 new requests" or "Request #7: copy verified". They never show
   email subjects, names or folders, so they are safe on a locked screen.
 * If the PC was off at check time, ContentShare checks when it is next on.
+
+## 8a. Help and updates
+
+* **Help** in the left-hand list explains how to connect Gmail step by step, how to use each
+  screen, and what every setting does. It is part of the program and works offline.
+* When ContentShare starts it checks whether a newer version exists. If so, a box appears at the
+  **bottom left** of the window with **Download**. When the download has finished and been checked
+  against its published checksum, the box shows **Update** and **Cancel**. Nothing is installed
+  until you press **Update**, and the update waits while copies are running.
+* Turn the start-up check off, or check right now, in Settings → General.
 
 ## 9. Backup and moving to another PC
 

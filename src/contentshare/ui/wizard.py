@@ -9,7 +9,6 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLineEdit,
-    QListWidget,
     QPlainTextEdit,
     QPushButton,
     QVBoxLayout,
@@ -19,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from contentshare.config.models import AppConfig, Department
+from contentshare.ui.folder_list import FolderList
 from contentshare.ui.settings_page import explain_validation, lines
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
@@ -76,20 +76,13 @@ class FirstRunWizard(QWizard):
                 "ContentShare only reads here; it never changes or deletes anything."
             )
         )
-        self.roots = QListWidget()
-        self.roots.setAccessibleName("Storage folders")
-        layout.addWidget(self.roots, 1)
-        row = QHBoxLayout()
-        browse = QPushButton("Add folder…")
-        browse.clicked.connect(self._add_root)
-        self.typed = QLineEdit()
-        self.typed.setPlaceholderText(r"or type a path: \\storage01\Programs")
-        add = QPushButton("Add")
-        add.clicked.connect(self._add_typed)
-        row.addWidget(browse)
-        row.addWidget(self.typed, 1)
-        row.addWidget(add)
-        layout.addLayout(row)
+        self.folders = FolderList(dialog_title="Choose a storage folder")
+        self.roots = self.folders.list  # the list itself, for callers that read it directly
+        self.typed = self.folders.typed
+        layout.addWidget(self.folders, 1)
+        layout.addWidget(
+            _note("Added the wrong one? Select it, then Edit (or double-click) it, or Remove.")
+        )
         return page
 
     def _department(self) -> QWizardPage:
@@ -129,9 +122,9 @@ class FirstRunWizard(QWizard):
         layout = QVBoxLayout(page)
         layout.addWidget(
             _note(
-                "Next: Settings → Gmail to connect your mailbox (the setup guide in docs/"
-                "GMAIL_SETUP.md explains the Google steps), then Settings → Index to read the "
-                "storage server."
+                "Next: Settings → Gmail to connect your mailbox (Help → Connect Gmail explains "
+                "the Google steps one by one), then Settings → Index to read the storage "
+                "server. The Help screen also explains every setting."
             )
         )
         self.dry = QCheckBox("Start in dry-run mode (recommended): check everything, copy nothing")
@@ -146,15 +139,8 @@ class FirstRunWizard(QWizard):
         return page
 
     # ------------------------------------------------------------------ helpers
-    def _add_root(self) -> None:
-        chosen = QFileDialog.getExistingDirectory(self, "Choose a storage folder")
-        if chosen:
-            self.roots.addItem(chosen.replace("/", "\\"))
-
     def _add_typed(self) -> None:
-        if self.typed.text().strip():
-            self.roots.addItem(self.typed.text().strip())
-            self.typed.clear()
+        self.folders.add_typed()
 
     def _browse_dest(self) -> None:
         chosen = QFileDialog.getExistingDirectory(self, "Choose the destination folder")
@@ -163,7 +149,7 @@ class FirstRunWizard(QWizard):
 
     def build_config(self) -> AppConfig:
         """Raises ``ValidationError`` when something typed here is not acceptable."""
-        roots = [self.roots.item(i).text() for i in range(self.roots.count())]
+        roots = self.folders.paths()
         department = Department(
             name=self.dept_name.text(),
             sender_emails=lines(self.dept_emails.toPlainText()),
@@ -179,7 +165,7 @@ class FirstRunWizard(QWizard):
         return AppConfig.model_validate(data)
 
     def validateCurrentPage(self) -> bool:  # noqa: N802 - Qt override
-        if self.currentPage() is self.storage_page and self.roots.count() == 0:
+        if self.currentPage() is self.storage_page and not self.folders.paths():
             QMessageBox.warning(self, "Storage folder", "Add at least one storage folder.")
             return False
         if self.currentPage() is self.department_page:

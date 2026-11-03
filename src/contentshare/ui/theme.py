@@ -159,6 +159,7 @@ def palette_for(t: Theme) -> QPalette:
         (QPalette.ColorRole.HighlightedText, t.accent_text),
         (QPalette.ColorRole.PlaceholderText, t.muted), (QPalette.ColorRole.ToolTipBase, t.card),
         (QPalette.ColorRole.ToolTipText, t.text),
+        (QPalette.ColorRole.Link, t.accent), (QPalette.ColorRole.LinkVisited, t.accent),
     ):  # fmt: skip
         palette.setColor(role, QColor(color))
     return palette

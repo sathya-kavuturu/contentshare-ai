@@ -47,7 +47,7 @@ contentshare = "contentshare.ui.app:run"
 where = ["src"]
 
 [tool.setuptools.package-data]
-contentshare = ["py.typed"]
+contentshare = ["py.typed", "help/*.md"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

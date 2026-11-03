@@ -131,6 +131,24 @@ who can use the PC account.
   SmartScreen will warn. The build can sign (`docs/PACKAGING.md`); until then publish
   the installer's SHA-256 checksum next to it.
 
+### 8. The built-in updater
+At start-up (switchable in Settings → General) the program reads the project's public GitHub
+releases page and, only when the user clicks **Download** and then **Update**, fetches and runs
+the new installer. `app/updates.py` limits what this can do:
+* Only `https://` addresses are used (a redirect to anything else is refused), and downloads are
+  accepted only from this project's own release address.
+* The installer must be named like a ContentShare installer, match the release's version, be
+  under 400 MB, and match the SHA-256 in the `SHA256SUMS.txt` published in the same release.
+  A damaged or cut-off download is deleted. Only installers the program downloaded itself are
+  ever started, and only after the user clicks Update; it waits while copies are running.
+* Nothing about the PC, the settings or the mail is sent: it is a plain GET of a public page.
+* **Limit:** the checksum comes from the same place as the installer, so someone who takes
+  over the GitHub account (or its release workflow) can publish a malicious "update" that passes
+  the check. Protect the account with two-factor sign-in and, when a code-signing certificate is
+  available, have the updater verify the installer's signature as well. A file downloaded by
+  the program has no "downloaded from the internet" mark, so SmartScreen does not warn; the
+  checksum is the only gate.
+
 ## What the Phase 8 review found and fixed
 
 | # | Finding | Severity | Fix |

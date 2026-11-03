@@ -144,6 +144,14 @@ class CopySettings(BaseModel):
     free_space_margin_pct: Annotated[int, Field(ge=0, le=50)] = 5
 
 
+class UpdateSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # Ask GitHub (the project's releases page) whether a newer version exists when the program
+    # starts. Nothing about this PC or its settings is sent; it is a plain read of a public page.
+    check_on_start: bool = True
+
+
 class ScheduleSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -263,6 +271,7 @@ class AppConfig(BaseModel):
     source_roots: list[str] = Field(default_factory=list)
     departments: list[Department] = Field(default_factory=list)
     schedule: ScheduleSettings = Field(default_factory=ScheduleSettings)
+    updates: UpdateSettings = Field(default_factory=UpdateSettings)
     copy_options: CopySettings = Field(default_factory=CopySettings)
     matching: MatchSettings = Field(default_factory=MatchSettings)
     parsing: ParsingSettings = Field(default_factory=ParsingSettings)

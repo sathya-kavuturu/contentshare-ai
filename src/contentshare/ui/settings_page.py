@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QHBoxLayout,
     QLineEdit,
-    QListWidget,
     QPlainTextEdit,
     QPushButton,
     QSpinBox,
@@ -29,9 +28,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import contentshare
 from contentshare.config.models import AppConfig, Department
 from contentshare.config.templates import REPLY_PLACEHOLDERS, SUBFOLDER_PLACEHOLDERS
 from contentshare.ui.context import UiContext
+from contentshare.ui.folder_list import FolderList
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
@@ -124,6 +125,8 @@ class DepartmentDialog(QDialog):
 
 class SettingsPage(QWidget):
     saved = Signal()  # settings were stored (the window re-reads schedule and tray options)
+    open_help = Signal(str)  # a Help topic to show, for example "gmail"
+    update_check_requested = Signal()  # "Check for updates now"
 
     def __init__(self, ctx: UiContext, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -191,24 +194,21 @@ class SettingsPage(QWidget):
         form.addRow("", self.notify)
         form.addRow("", self.auto_default)
         form.addRow("", self.dry_run)
+        self.check_updates = QCheckBox("Check for updates when ContentShare starts")
+        self.update_now = QPushButton("Check for updates now")
+        self.update_now.clicked.connect(self.update_check_requested.emit)
+        version = QLabel(f"You have ContentShare {contentshare.__version__}")
+        version.setProperty("role", "muted")
+        updates_row = QHBoxLayout()
+        updates_row.addWidget(self.update_now)
+        updates_row.addWidget(version, 1)
+        form.addRow("", self.check_updates)
+        form.addRow("", updates_row)
 
-        self.roots = QListWidget()
-        self.roots.setAccessibleName("Source folders")
-        self.roots.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        buttons = QHBoxLayout()
-        add = QPushButton("Add folder…")
-        add.clicked.connect(self._add_root)
-        typed = QPushButton("Add path…")
-        typed.clicked.connect(self._type_root)
-        remove = QPushButton("Remove")
-        remove.clicked.connect(lambda: self.roots.takeItem(self.roots.currentRow()))
-        for b in (add, typed, remove):
-            buttons.addWidget(b)
-        buttons.addStretch(1)
-        column = QVBoxLayout()
-        column.addWidget(self.roots)
-        column.addLayout(buttons)
-        form.addRow("Storage folders to search", column)
+        self.folders = FolderList(dialog_title="Choose a storage folder")
+        self.roots = self.folders.list  # the list itself, for callers that read it directly
+        self.folders.setMinimumHeight(150)
+        form.addRow("Storage folders to search", self.folders)
 
         self.default_reply = QPlainTextEdit()
         self.default_reply.setFixedHeight(150)
@@ -257,6 +257,9 @@ class SettingsPage(QWidget):
         row.addWidget(self.secret, 1)
         row.addWidget(pick)
         form.addRow("Client file", row)
+        how = QPushButton("How do I get this file?")
+        how.clicked.connect(lambda: self.open_help.emit("gmail"))
+        form.addRow("", how)
         self.gmail_state = QLabel()
         self.connect_button = QPushButton("Connect Gmail…")
         self.connect_button.clicked.connect(self._connect)
@@ -342,8 +345,8 @@ class SettingsPage(QWidget):
         self.start_note.setText(self._startup_text())
         self.auto_default.setChecked(c.auto_reply_default)
         self.dry_run.setChecked(c.dry_run)
-        self.roots.clear()
-        self.roots.addItems(c.source_roots)
+        self.check_updates.setChecked(c.updates.check_on_start)
+        self.folders.set_paths(c.source_roots)
         self.default_reply.setPlainText(c.default_reply_template)
         self.departments = [d.model_copy() for d in c.departments]
         self._fill_departments()
@@ -373,7 +376,8 @@ class SettingsPage(QWidget):
         )
         base["auto_reply_default"] = self.auto_default.isChecked()
         base["dry_run"] = self.dry_run.isChecked()
-        base["source_roots"] = [self.roots.item(i).text() for i in range(self.roots.count())]
+        base["updates"]["check_on_start"] = self.check_updates.isChecked()
+        base["source_roots"] = self.folders.paths()
         typed = self.default_reply.toPlainText()
         if not typed.strip():
             raise ValueError("The default reply text must not be empty")
@@ -477,28 +481,6 @@ class SettingsPage(QWidget):
         if row >= 0:
             del self.departments[row]
             self._fill_departments()
-
-    def _add_root(self) -> None:
-        chosen = QFileDialog.getExistingDirectory(self, "Choose a storage folder")
-        if chosen:
-            self.roots.addItem(chosen.replace("/", "\\"))
-
-    def _type_root(self) -> None:
-        dialog = QDialog(self)
-        dialog.setWindowTitle("Add a storage path")
-        layout = QVBoxLayout(dialog)
-        edit = QLineEdit()
-        edit.setPlaceholderText(r"\\storage01\Programs   or   Z:\Programs")
-        layout.addWidget(edit)
-        box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
-        box.accepted.connect(dialog.accept)
-        box.rejected.connect(dialog.reject)
-        layout.addWidget(box)
-        dialog.resize(480, 110)
-        if dialog.exec() and edit.text().strip():
-            self.roots.addItem(edit.text().strip())
 
     def _browse_secret(self) -> None:
         path, _f = QFileDialog.getOpenFileName(

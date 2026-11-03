@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -20,20 +20,25 @@ from contentshare.app.controller import Controller, Event
 from contentshare.app.notifications import Toast, for_check, for_event
 from contentshare.app.scheduler import Due
 from contentshare.app.startup import StartAtLogin
+from contentshare.app.updates import Updater
 from contentshare.gmail.intake import IntakeReport
 from contentshare.ui.automation import Automation
 from contentshare.ui.bridge import Bridge
 from contentshare.ui.context import UiContext
 from contentshare.ui.copies_page import CopiesPage
+from contentshare.ui.help_page import HelpPage
 from contentshare.ui.history_page import HistoryPage
 from contentshare.ui.icons import app_icon
 from contentshare.ui.requests_page import RequestsPage, summarize_check
 from contentshare.ui.settings_page import SettingsPage
 from contentshare.ui.tray import Tray
+from contentshare.ui.update_card import UpdateCard
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
-PAGES = ["Requests", "Active copies", "History", "Settings"]
+PAGES = ["Requests", "Active copies", "History", "Settings", "Help"]
+
+UPDATE_CHECK_DELAY_MS = 4000  # let the window appear and the first work settle before the check
 
 
 def _banner(text: str) -> QLabel:
@@ -52,6 +57,7 @@ class MainWindow(QMainWindow):
         tray: Tray | None = None,
         automation: Automation | None = None,
         startup: StartAtLogin | None = None,
+        updater: Updater | None = None,
     ) -> None:
         super().__init__()
         self.controller, self.bridge = controller, bridge
@@ -87,6 +93,8 @@ class MainWindow(QMainWindow):
         for name in PAGES:
             self.nav.addItem(QListWidgetItem(name))
         side_layout.addWidget(self.nav, 1)
+        # Bottom left: "a new version is available" (only when an updater was given)
+        self.update_card = self._add_update_card(side_layout, updater)
         body.addWidget(side)
 
         self.stack = QStackedWidget()
@@ -94,7 +102,8 @@ class MainWindow(QMainWindow):
         self.copies = CopiesPage(self.ctx)
         self.history = HistoryPage(self.ctx)
         self.settings = SettingsPage(self.ctx)
-        for page in (self.requests, self.copies, self.history, self.settings):
+        self.help = HelpPage()
+        for page in (self.requests, self.copies, self.history, self.settings, self.help):
             self.stack.addWidget(page)
         body.addWidget(self.stack, 1)
         outer.addLayout(body, 1)
@@ -106,9 +115,20 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Ready")
         self.update_chrome()
 
+    def _add_update_card(self, layout: QVBoxLayout, updater: Updater | None) -> UpdateCard | None:
+        if updater is None:
+            return None
+        card = UpdateCard(updater, self.bridge, self.controller.busy)
+        layout.addWidget(card)
+        return card
+
     def _connect_services(self) -> None:
         self.bridge.app_event.connect(self._on_event)
         self.settings.saved.connect(self._settings_saved)
+        self.settings.open_help.connect(self.show_help)
+        self.settings.update_check_requested.connect(self.check_for_updates)
+        if self.update_card is not None:
+            self.update_card.found.connect(self._update_found)
         if self.tray is not None:
             self.tray.open_requested.connect(self.show_window)
             self.tray.check_requested.connect(self.requests.check_now)
@@ -124,6 +144,32 @@ class MainWindow(QMainWindow):
         self.showNormal()
         self.raise_()
         self.activateWindow()
+
+    def show_help(self, topic: str = "") -> None:
+        """Open the Help screen, on ``topic`` (for example "gmail") when given."""
+        self.show_window("Help")
+        if topic:
+            self.help.show_topic(topic)
+
+    # ------------------------------------------------------------------ updates
+    def start_update_check(self) -> None:
+        """The check made when the program starts, if the user has not turned it off."""
+        if self.update_card is not None and self.controller.config.updates.check_on_start:
+            QTimer.singleShot(UPDATE_CHECK_DELAY_MS, lambda: self.check_for_updates(manual=False))
+
+    def check_for_updates(self, manual: bool = True) -> None:
+        if self.update_card is not None:
+            self.update_card.check(manual=manual)
+
+    def _update_found(self, version: str) -> None:
+        self.say(f"ContentShare {version} is available. See the box at the bottom left.")
+        self._toast(
+            Toast(
+                "A new version is available",
+                f"ContentShare {version} can be downloaded. Open the window to update.",
+                "info",
+            )
+        )
 
     def quit_app(self) -> None:
         """Really quit (the close button only hides the window when the tray is in use)."""
