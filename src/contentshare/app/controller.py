@@ -23,7 +23,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from contentshare.config.models import AppConfig
+from contentshare.config.models import AppConfig, Department
 from contentshare.config.store import save_config
 from contentshare.copy_engine import PreflightError, Progress, build_plan, format_bytes, preflight
 from contentshare.gmail.auth import GmailAuth, required_scopes
@@ -31,6 +31,7 @@ from contentshare.gmail.errors import AuthRequiredError, GmailError
 from contentshare.gmail.gateway import GmailGateway
 from contentshare.gmail.intake import IntakeReport, IntakeService
 from contentshare.gmail.replies import ReplyDraft, ReplyError, ReplyResult, ReplyService
+from contentshare.index.pcsearch import DEFAULT_SECONDS, search_pc
 from contentshare.index.store import ContentIndex, IndexedItem, ScanReport, measure
 from contentshare.jobs.copy_job import (
     CopyJobRunner,
@@ -84,7 +85,7 @@ class CandidateView:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CandidateView:
         return cls(
-            item_id=data.get("item_id"),
+            item_id=data.get("item_id") or None,  # 0: content that is not in the index
             path=str(data.get("path", "")),
             kind=str(data.get("kind", "dir")),
             size=int(data.get("size", 0)),
@@ -327,16 +328,69 @@ class Controller:
         text = text.strip()
         if not text:
             return []
-        self._row(request_id)  # the request must still exist
-        parsed = parse_request(text, "", self.config.parsing, today=self._today())
-        item = parsed.items[0] if parsed.items else RequestItem(program=text)
-        if not item.program.strip():
-            item = replace(item, program=text)
-        hits = self.index.search(text, date_phrases=date_phrases(list(item.dates)))
+        row = self._row(request_id)  # the request must still exist
+        item = self._typed_item(text)
+        roots = self.config.roots_for(self._department_or_none(row["department"]))
+        hits = self.index.search(text, date_phrases=date_phrases(list(item.dates)), roots=roots)
         ranked = rank_candidates(
             item, hits, self.config.parsing, today=self._today(), limit=MANUAL_RESULTS
         )
         return [CandidateView.from_candidate(c) for c in ranked]
+
+    def _typed_item(self, text: str) -> RequestItem:
+        parsed = parse_request(text, "", self.config.parsing, today=self._today())
+        item = parsed.items[0] if parsed.items else RequestItem(program=text)
+        return replace(item, program=text) if not item.program.strip() else item
+
+    def _department_or_none(self, name: str | None) -> Department | None:
+        return next((d for d in self.config.departments if d.name == name), None)
+
+    def pc_search_allowed(self, request_id: int) -> bool:
+        """True if the request's department may fall back to searching this whole PC."""
+        dept = self._department_or_none(self._row(request_id)["department"])
+        return bool(dept and dept.search_whole_pc)
+
+    def search_pc(
+        self,
+        request_id: int,
+        text: str = "",
+        *,
+        should_stop: Callable[[], bool] | None = None,
+        progress: Callable[[int, str], None] | None = None,
+        seconds: float = DEFAULT_SECONDS,
+    ) -> tuple[list[CandidateView], bool]:
+        """The wider search: this PC's own drives, for a department that allows it. ``text``
+        empty means the program the email asked for. Returns the matches (best first, never
+        selected for the person) and whether the whole PC was covered before it stopped.
+        Slow: call it from a background thread."""
+        row = self._row(request_id)
+        dept = self._department(row["department"])
+        if not dept.search_whole_pc:
+            raise ActionError(
+                f"Searching the whole PC is switched off for {dept.name} (Settings → Departments)."
+            )
+        text = text.strip()
+        if text:
+            item = self._typed_item(text)
+        else:
+            try:
+                detail = json.loads(row.get("query_json") or "{}")
+                item = RequestItem.from_dict(detail.get("item") or {})
+            except (ValueError, IndexError, TypeError):
+                item = RequestItem(program="")
+        if not item.program.strip():
+            return [], True
+        found = search_pc(
+            item.program,
+            skip=[d.destination_root for d in self.config.departments],
+            should_stop=should_stop,
+            progress=progress,
+            seconds=seconds,
+        )
+        ranked = rank_candidates(
+            item, found.items, self.config.parsing, today=self._today(), limit=MANUAL_RESULTS
+        )
+        return [CandidateView.from_candidate(c) for c in ranked], found.complete
 
     def choose(self, request_id: int, item_id: int) -> None:
         """The user picked this indexed content for the request (NEEDS_REVIEW or READY).
@@ -358,7 +412,7 @@ class Controller:
             raise ActionError("This request can no longer be changed")
         dept = self._department(row["department"])
         found = None
-        for root in self.config.source_roots:
+        for root in self.config.roots_for(dept):
             try:
                 source = resolve_within(root, path.strip())
                 found = (root, source, source.relative_to(Path(os.path.realpath(root))))
@@ -390,11 +444,11 @@ class Controller:
 
     def _use_picked_anywhere(self, row: dict[str, Any], dept: Any, path: str) -> None:
         """A folder or file outside the storage folders, for a department allowed to use one."""
-        if not dept.browse_anywhere:
+        if not dept.may_pick_anywhere:
             raise ActionError(
-                "That is outside the storage folders in Settings. Choose something inside one "
-                f"of them, or turn on “Allow choosing from anywhere” for {dept.name} in "
-                "Settings → Departments."
+                f"That is outside the storage folders for {dept.name}. Choose something inside "
+                "one of them, or turn on “Allow choosing from anywhere” for "
+                f"{dept.name} in Settings → Departments."
             )
         try:
             source = resolve_source(self.config, dept, path)
@@ -699,10 +753,10 @@ class Controller:
 
     def index_is_stale(self, *, max_age_hours: int = 20) -> bool:
         """True if any storage folder was never scanned or not scanned recently."""
-        if not self.config.source_roots:
+        if not self.config.all_roots():
             return False
         now = datetime.now(UTC)
-        for root in self.config.source_roots:
+        for root in self.config.all_roots():
             scan = self.index.last_scan(root)
             stamp = scan.get("finished_at") if scan else None
             try:
@@ -797,14 +851,14 @@ class Controller:
         should_stop: Callable[[], bool] | None = None,
     ) -> list[ScanReport]:
         reports = self.index.scan_all(
-            self.config.source_roots, progress=progress, should_stop=should_stop
+            self.config.all_roots(), progress=progress, should_stop=should_stop
         )
         self._emit("changed")
         return reports
 
     def index_summary(self) -> dict[str, Any]:
         stats = self.index.stats()
-        scans = [self.index.last_scan(r) for r in self.config.source_roots]
+        scans = [self.index.last_scan(r) for r in self.config.all_roots()]
         done = [s["finished_at"] for s in scans if s and s.get("finished_at")]
         return {**stats, "last_scan": max(done) if done else None, "roots": len(scans)}
 
@@ -820,7 +874,7 @@ class Controller:
         """Use new settings. Refused while copies run, so a job never changes folders midway."""
         if self.busy():
             raise ActionError("Wait for the running copies to finish before changing settings")
-        removed = set(self.config.source_roots) - set(config.source_roots)
+        removed = set(self.config.all_roots()) - set(config.all_roots())
         if persist:
             save_config(config, self._config_path)
         for root in removed:

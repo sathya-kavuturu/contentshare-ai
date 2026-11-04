@@ -66,13 +66,13 @@ def options_from_config(
 
 
 def resolve_source(config: AppConfig, dept: Department, text: str) -> Path:
-    """The content to copy: inside a storage folder, or, for a department that is allowed to
-    take content from anywhere, any folder or file the user picked (never inside Windows or
-    Program Files, and never a whole drive)."""
+    """The content to copy: inside the department's folders, or, for a department that is
+    allowed to take content from anywhere, any folder or file the user picked (never inside
+    Windows or Program Files, and never a whole drive)."""
     try:
-        return resolve_within_any(config.source_roots, text)
+        return resolve_within_any(config.roots_for(dept), text)
     except PathSafetyError:
-        if not dept.browse_anywhere:
+        if not dept.may_pick_anywhere:
             raise
     path = resolve_anywhere(text)
     protected = inside_system_folder(str(path))

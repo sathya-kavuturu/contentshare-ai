@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+import contextlib
+import logging
+import threading
+
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -19,11 +23,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from contentshare.app.controller import CandidateView, Controller, RequestView
+from contentshare.app.controller import ActionError, CandidateView, Controller, RequestView
 from contentshare.copy_engine import format_bytes
 from contentshare.gmail.replies import ReplyDraft
 from contentshare.ui.status import confidence_dots
 from contentshare.ui.widgets import Label as QLabel
+
+log = logging.getLogger(__name__)
 
 
 def _buttons(dialog: QDialog, ok_text: str, cancel_text: str = "Cancel") -> QDialogButtonBox:
@@ -37,7 +43,13 @@ def _buttons(dialog: QDialog, ok_text: str, cancel_text: str = "Cancel") -> QDia
 
 
 class CandidateDialog(QDialog):
-    """Choose which content satisfies the request: the suggestions, or a manual search."""
+    """Choose which content satisfies the request: the suggestions, or a manual search.
+
+    A department that allows it can also search this whole PC, slowly and in the background:
+    it starts by itself when nothing was found in the department's own folders."""
+
+    _pc_looked = Signal(int)  # folders looked at so far (from the search thread)
+    _pc_finished = Signal(object, bool, str)  # (matches, whole PC covered, problem)
 
     def __init__(self, controller: Controller, view: RequestView, parent: QWidget | None = None):
         super().__init__(parent)
@@ -67,6 +79,15 @@ class CandidateDialog(QDialog):
         self.browse_file.clicked.connect(self._browse_file)
         browse_row.addWidget(self.browse_folder)
         browse_row.addWidget(self.browse_file)
+        self.pc_button = QPushButton("Search the whole PC")
+        self.pc_button.clicked.connect(self._toggle_pc_search)
+        self._pc_allowed = controller.pc_search_allowed(view.id)
+        self._pc_running = False
+        self._pc_stop = threading.Event()
+        self.pc_button.setVisible(self._pc_allowed)
+        self._pc_looked.connect(self._on_pc_progress)
+        self._pc_finished.connect(self._on_pc_finished)
+        browse_row.addWidget(self.pc_button)
         browse_row.addStretch(1)
         layout.addLayout(browse_row)
         self.results = QListWidget()
@@ -78,6 +99,8 @@ class CandidateDialog(QDialog):
         layout.addWidget(self.hint)
         layout.addWidget(_buttons(self, "Use selected content"))
         self._show(list(view.candidates), "Suggestions from the email. Search to look for others.")
+        if self._pc_allowed and not view.candidates:
+            self._start_pc_search()  # nothing in the department's folders: look further
 
     def _search(self) -> None:
         text = self.query.text().strip()
@@ -85,9 +108,82 @@ class CandidateDialog(QDialog):
             return
         found = self._controller.search(self._view.id, text)
         self._show(found, f"{len(found)} result(s)" if found else "Nothing found for that name.")
+        if not found and self._pc_allowed:
+            self._start_pc_search()
+
+    # ------------------------------------------------------------------ the whole-PC search
+    def _toggle_pc_search(self) -> None:
+        if self._pc_running:
+            self._pc_stop.set()
+            self.pc_button.setEnabled(False)  # until the search has noticed
+        else:
+            self._start_pc_search()
+
+    def _start_pc_search(self) -> None:
+        if self._pc_running:
+            return
+        text = self.query.text().strip()
+        stop = self._pc_stop = threading.Event()
+        self._pc_running = True
+        self.pc_button.setEnabled(True)
+        self.pc_button.setText("Stop searching")
+        self.hint.setText("Not found in the department's folders. Searching this PC…")
+
+        def send(*args: object) -> None:
+            with contextlib.suppress(RuntimeError):  # the dialog was closed meanwhile
+                self._pc_finished.emit(*args)
+
+        def work() -> None:
+            try:
+                found, complete = self._controller.search_pc(
+                    self._view.id,
+                    text,
+                    should_stop=stop.is_set,
+                    progress=lambda n, _folder: self._emit_looked(n),
+                )
+            except ActionError as exc:
+                send([], True, str(exc))
+            except Exception:
+                log.exception("whole-PC search failed")
+                send([], True, "The search of this PC failed. Details are in the log file.")
+            else:
+                send(found, complete, "")
+
+        threading.Thread(target=work, name="pc-search", daemon=True).start()
+
+    def _emit_looked(self, count: int) -> None:
+        with contextlib.suppress(RuntimeError):
+            self._pc_looked.emit(count)
+
+    def _on_pc_progress(self, count: int) -> None:
+        if self._pc_running:
+            self.hint.setText(f"Searching this PC… {count:,} folders looked at so far.")
+
+    def _on_pc_finished(self, found: list[CandidateView], complete: bool, problem: str) -> None:
+        self._pc_running = False
+        self.pc_button.setEnabled(True)
+        self.pc_button.setText("Search the whole PC")
+        if problem:
+            self.hint.setText(problem)
+            return
+        partial = "" if complete else " The search was stopped before the whole PC was covered."
+        if found:
+            self._show(
+                found,
+                f"{len(found)} match(es) on this PC. They are only suggestions: check the "
+                f"name, then choose one. Its size is measured when you choose it.{partial}",
+            )
+        else:
+            self.hint.setText(f"Nothing like that was found on this PC either.{partial}")
+
+    def done(self, result: int) -> None:
+        self._pc_stop.set()  # a search still running has nothing left to show
+        super().done(result)
 
     def _start_folder(self) -> str:
-        roots = self._controller.config.source_roots
+        config = self._controller.config
+        dept = next((x for x in config.departments if x.name == self._view.department), None)
+        roots = config.roots_for(dept)
         return roots[0] if roots else ""
 
     def _browse_folder(self) -> None:
@@ -109,7 +205,7 @@ class CandidateDialog(QDialog):
             (x for x in self._controller.config.departments if x.name == self._view.department),
             None,
         )
-        if dept is not None and dept.browse_anywhere:
+        if dept is not None and dept.may_pick_anywhere:
             return "Your pick is first. It can be anywhere on this PC or network."
         return "Your pick is first. It must be inside a storage folder in Settings."
 
@@ -125,9 +221,14 @@ class CandidateDialog(QDialog):
             pick.setData(Qt.ItemDataRole.UserRole, self._browsed)
             self.results.addItem(pick)
         for c in candidates:
+            size = (
+                "found on this PC"
+                if c.item_id is None and not c.size
+                else f"{format_bytes(c.size)} · {c.file_count} file(s)"
+            )
             item = QListWidgetItem(
-                f"{c.path}\n    {format_bytes(c.size)} · {c.file_count} file(s) · "
-                f"{confidence_dots(c.score)}" + (f" · {'; '.join(c.notes)}" if c.notes else "")
+                f"{c.path}\n    {size} · {confidence_dots(c.score)}"
+                + (f" · {'; '.join(c.notes)}" if c.notes else "")
             )
             item.setData(Qt.ItemDataRole.UserRole, c)
             self.results.addItem(item)
@@ -142,6 +243,8 @@ class CandidateDialog(QDialog):
         data = item.data(Qt.ItemDataRole.UserRole)
         if isinstance(data, str):
             self.chosen_path = data
+        elif data.item_id is None:  # found on this PC, so not in the index: chosen by its path
+            self.chosen_path = data.path
         else:
             self.chosen = data
         super().accept()

@@ -6,6 +6,14 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Each department can have its own folders to search** (Settings → Departments → *Search in*): a
+  server, drive or folder per department. A department with none uses the general storage folders,
+  as before. Requests are looked for only in the requesting department's folders, and a pick must be
+  inside them. All of these folders are indexed.
+- **Search the whole PC when nothing is found** (per department, off by default). *Choose content*
+  searches this PC's own drives by name, starting by itself when nothing was found there, with a
+  Stop button. It only suggests: nothing found this way is marked Ready, and it skips network drives,
+  Windows and Program Files, recycle bins, links and the departments' copy folders.
 - **Check for requests more often than once a day.** Settings → General → *How often*: once a day
   at a set time, or every 15 minutes, 30 minutes, hour, 2, 3, 6 or 12 hours. A check still only
   reads mail and adds cards; nothing is copied or sent without a click. Old settings keep working

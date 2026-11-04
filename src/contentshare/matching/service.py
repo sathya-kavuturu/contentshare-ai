@@ -37,12 +37,18 @@ class Triage:
 
 
 def triage_item(
-    item: RequestItem, index: ContentIndex, config: AppConfig, *, today: date
+    item: RequestItem,
+    index: ContentIndex,
+    config: AppConfig,
+    *,
+    today: date,
+    roots: list[str] | None = None,
 ) -> Triage:
-    """Decide whether a request can go straight to READY. When in doubt: NEEDS_REVIEW."""
+    """Decide whether a request can go straight to READY. When in doubt: NEEDS_REVIEW.
+    ``roots`` are the storage folders of the requesting department (``None``: all indexed)."""
     if not item.program.strip():
         return Triage(RequestState.NEEDS_REVIEW, "Could not tell which program was requested")
-    hits = index.search(item.program, date_phrases=date_phrases(list(item.dates)))
+    hits = index.search(item.program, date_phrases=date_phrases(list(item.dates)), roots=roots)
     ranked = rank_candidates(item, hits, config.parsing, today=today)
     if not ranked:
         return Triage(RequestState.NEEDS_REVIEW, f"No content found for “{item.program}”")
@@ -136,13 +142,13 @@ def _exact_candidate(item: IndexedItem) -> Candidate:
 
 
 def exact_items(
-    subject: str, body: str, index: ContentIndex
+    subject: str, body: str, index: ContentIndex, roots: list[str] | None = None
 ) -> tuple[list[tuple[RequestItem, Triage]], tuple[str, ...]]:
     """Request lines for a department that gives exact folder names. A name with one folder of
     that name is READY; a name with several folders is NEEDS_REVIEW (pick one); a name that
     clearly was meant as a folder but has none is NEEDS_REVIEW (browse for it)."""
     wanted = wanted_names(subject, body)
-    matches = drop_enclosing(index.find_dirs_named([w.name for w in wanted]))
+    matches = drop_enclosing(index.find_dirs_named([w.name for w in wanted], roots))
     pairs: list[tuple[RequestItem, Triage]] = []
     for w in wanted:
         items = matches.get(w.name)
@@ -188,12 +194,15 @@ def process_email_requests(
     if email is None:
         raise KeyError(f"No email {email_id}")
     dept = config.department_for_sender(email["sender_email"])
+    roots = config.roots_for(dept)  # a department searches its own folders, not everyone's
     if dept is not None and dept.exact_folder_names:
-        pairs, notes = exact_items(subject, body, index)
+        pairs, notes = exact_items(subject, body, index, roots)
     else:
         parsed = parse_request(subject, body, config.parsing, today=today)
         items = list(parsed.items) or [RequestItem(program="")]
-        pairs = [(item, triage_item(item, index, config, today=today)) for item in items]
+        pairs = [
+            (item, triage_item(item, index, config, today=today, roots=roots)) for item in items
+        ]
         notes = parsed.notes
 
     ids: list[int] = []

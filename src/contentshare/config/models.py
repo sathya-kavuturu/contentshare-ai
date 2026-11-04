@@ -80,6 +80,28 @@ class Department(BaseModel):
     # True: content can also be picked by hand from anywhere on this PC or network (File
     # Explorer style), not only inside the storage folders. Off by default.
     browse_anywhere: bool = False
+    # This department's own folders to search (a server, a drive, a folder). Empty: it uses the
+    # storage folders from Settings → General, as every department did before.
+    source_roots: list[str] = Field(default_factory=list)
+    # True: when nothing is found in the folders above, the PC's own drives can be searched too
+    # (never network drives, and never Windows or Program Files). Off by default.
+    search_whole_pc: bool = False
+
+    @property
+    def may_pick_anywhere(self) -> bool:
+        """Content outside the department's folders may be used: picked by hand, or found by the
+        whole-PC search."""
+        return self.browse_anywhere or self.search_whole_pc
+
+    @field_validator("source_roots")
+    @classmethod
+    def _own_roots(cls, values: list[str]) -> list[str]:
+        out: list[str] = []
+        for value in values:
+            checked = _check_root(value.strip())
+            if all(_key(checked) != _key(seen) for seen in out):
+                out.append(checked)
+        return out
 
     @field_validator("sender_emails")
     @classmethod
@@ -341,11 +363,26 @@ class AppConfig(BaseModel):
                 )
         return self
 
+    def roots_for(self, dept: Department | None) -> list[str]:
+        """The folders this department's requests are searched in: its own, or else the storage
+        folders from Settings → General."""
+        if dept is not None and dept.source_roots:
+            return list(dept.source_roots)
+        return list(self.source_roots)
+
+    def all_roots(self) -> list[str]:
+        """Every folder that is indexed: the general storage folders and each department's own."""
+        out: list[str] = []
+        for root in [*self.source_roots, *(r for d in self.departments for r in d.source_roots)]:
+            if all(_key(root) != _key(seen) for seen in out):
+                out.append(root)
+        return out
+
     def _check_folders(self) -> None:
         """Where copies go must never be (or contain) the archive being read, or another
         department's folder: content would land where the wrong people can see it."""
         for dept in self.departments:
-            for root in self.source_roots:
+            for root in self.all_roots():
                 if paths_overlap(dept.destination_root, root):
                     raise ValueError(
                         f"The folder for '{dept.name}' ({dept.destination_root}) overlaps the "

@@ -32,10 +32,27 @@ _MAX_QUERY_TOKENS = 8
 _TOKEN = re.compile(r"[^\W_]+")
 
 _SAFE_PHRASE = re.compile(r"[a-z0-9 ]{3,40}")  # what date_phrases() produces; nothing else
-_SEARCH_SQL = (
-    "SELECT c.* FROM content_fts f JOIN content_items c ON c.id = f.rowid "
-    "WHERE content_fts MATCH ? ORDER BY bm25(content_fts, 10.0, 1.0) LIMIT ?"
-)
+
+
+def _in_roots(column: str, roots: Sequence[str] | None) -> tuple[str, tuple[str, ...]]:
+    """``AND <column> IN (?, ?)`` for a search limited to these storage folders, and the folders
+    as parameters. ``None`` means every indexed folder. Only ``?`` marks go into the SQL."""
+    if roots is None:
+        return "", ()
+    if not roots:
+        return f" AND {column} IN (NULL)", ()  # no folders: nothing can match
+    return f" AND {column} IN ({', '.join('?' for _ in roots)})", tuple(roots)
+
+
+def _search_sql(roots: Sequence[str] | None) -> tuple[str, tuple[str, ...]]:
+    clause, args = _in_roots("c.root", roots)
+    return (
+        "SELECT c.* FROM content_fts f JOIN content_items c ON c.id = f.rowid "  # noqa: S608
+        f"WHERE content_fts MATCH ?{clause} ORDER BY bm25(content_fts, 10.0, 1.0) LIMIT ?",
+        args,
+    )
+
+
 _UPSERT = (
     "INSERT INTO content_items (root, rel_path, name, path_text, kind, size, file_count, "
     "mtime_ns, depth, scan_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
@@ -176,10 +193,13 @@ class ContentIndex:
         *,
         fuzzy: bool = True,
         date_phrases: Sequence[str] = (),
+        roots: Sequence[str] | None = None,
     ) -> list[IndexedItem]:
-        """Items whose folder/file name looks related to ``text``. Cheap and broad: the matcher
-        scores these properly afterwards. With ``fuzzy`` (the default), when few exact word
-        hits exist, names that merely share a few letters are added to catch typos.
+        """Items whose folder/file name looks related to ``text``. ``roots`` limits the search to
+        those storage folders (a department's own); ``None`` searches everything indexed. Cheap
+        and broad: the matcher scores these properly afterwards. With ``fuzzy`` (the default),
+        when few exact word hits exist, names that merely share a few letters are added to
+        catch typos.
 
         ``date_phrases`` (see ``parsing.dates.date_phrases``) make items whose name or path
         contains one of the requested dates come first. Without this, a program that recurs
@@ -190,25 +210,30 @@ class ContentIndex:
         fts = " OR ".join(f'"{t}"*' for t in tokens)  # tokens are [letters digits] only
         found: dict[int, IndexedItem] = {}
         phrases = [p for p in date_phrases if _SAFE_PHRASE.fullmatch(p)]
+        sql, root_args = _search_sql(roots)
+
+        def run(conn: Any, match: str) -> list[IndexedItem]:
+            return [_row_to_item(r) for r in conn.execute(sql, (match, *root_args, limit))]
+
         with self.db.read() as conn:
             if phrases:
                 dates = " OR ".join(f'"{p}"' for p in phrases)
                 scoped = f"{{name path_text}} : ({fts}) AND {{name path_text}} : ({dates})"
-                rows = conn.execute(_SEARCH_SQL, (scoped, limit)).fetchall()
-                found.update({r["id"]: _row_to_item(r) for r in rows})
+                found.update({i.id: i for i in run(conn, scoped)})
             dated = len(found)
             for column_filter in ("{name}", "{name path_text}"):
-                rows = conn.execute(_SEARCH_SQL, (f"{column_filter} : ({fts})", limit)).fetchall()
-                found.update({r["id"]: _row_to_item(r) for r in rows})
+                found.update({i.id: i for i in run(conn, f"{column_filter} : ({fts})")})
                 if len(found) - dated >= 30:  # name hits are enough; skip the broader path search
                     break
             if fuzzy and len(found) < 5:  # typo-tolerant fallback: share a few letters with a word
-                for item in self._fuzzy_fallback(conn, tokens, limit):
+                for item in self._fuzzy_fallback(conn, tokens, limit, roots):
                     found.setdefault(item.id, item)
         return list(found.values())[:limit]
 
     @staticmethod
-    def _fuzzy_fallback(conn: Any, tokens: list[str], limit: int) -> list[IndexedItem]:
+    def _fuzzy_fallback(
+        conn: Any, tokens: list[str], limit: int, roots: Sequence[str] | None = None
+    ) -> list[IndexedItem]:
         clauses, args = [], []
         for token in tokens:
             if len(token) >= 4:
@@ -217,25 +242,30 @@ class ContentIndex:
                     args.append(f"%{piece}%")
         if not clauses:
             return []
+        scope, root_args = _in_roots("root", roots)
         rows = conn.execute(
-            # Only the constant "name LIKE ?" is joined into the SQL; every value is a bound
-            # parameter, so nothing from a request can alter the query.
-            f"SELECT * FROM content_items WHERE {' OR '.join(clauses)} "  # noqa: S608  # nosec B608
+            # Only the constant "name LIKE ?" and "?" marks are joined into the SQL; every value is
+            # a bound parameter, so nothing from a request can alter the query.
+            f"SELECT * FROM content_items WHERE ({' OR '.join(clauses)}){scope} "  # noqa: S608  # nosec B608
             "ORDER BY depth LIMIT ?",
-            (*args, min(limit * 3, 1000)),
+            (*args, *root_args, min(limit * 3, 1000)),
         ).fetchall()
         return [_row_to_item(r) for r in rows]
 
-    def find_dirs_named(self, names: Sequence[str]) -> dict[str, list[IndexedItem]]:
+    def find_dirs_named(
+        self, names: Sequence[str], roots: Sequence[str] | None = None
+    ) -> dict[str, list[IndexedItem]]:
         """Folders whose name is exactly one of ``names`` (capitals do not matter), by the name
-        asked for. Names with no folder are left out. Every value is a bound parameter."""
+        asked for, in ``roots`` (``None``: everywhere indexed). Names with no folder are left out.
+        Every value is a bound parameter."""
         found: dict[str, list[IndexedItem]] = {}
+        scope, root_args = _in_roots("root", roots)
         with self.db.read() as conn:
             for name in names:
                 rows = conn.execute(
-                    "SELECT * FROM content_items WHERE name = ? COLLATE NOCASE AND kind = 'dir' "
-                    "ORDER BY depth, root, rel_path LIMIT 50",
-                    (name,),
+                    "SELECT * FROM content_items WHERE name = ? COLLATE NOCASE AND kind = 'dir'"  # noqa: S608
+                    f"{scope} ORDER BY depth, root, rel_path LIMIT 50",
+                    (name, *root_args),
                 ).fetchall()
                 if rows:
                     found[name] = [_row_to_item(r) for r in rows]

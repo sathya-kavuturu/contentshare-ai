@@ -64,12 +64,17 @@ server.*
 ### 3. Path injection
 *A request tries to read or write somewhere it should not.*
 
-* Sources must sit under the configured storage folders; destinations under the department's folder.
-  The one exception is a department with **Allow choosing from anywhere** switched on (off by
+* Sources must sit under the department's own search folders (or, if it has none, the general
+  storage folders); destinations under the department's folder, which may not be inside any searched
+  folder. The one exception is a department with **Allow choosing from anywhere** or **search this
+  whole PC** switched on (both off by
   default): the person can pick a folder or file anywhere with the file dialog. That path comes
   only from the dialog, never from an email; it must be absolute, is resolved like any other, is
   refused inside Windows or Program Files, as a whole drive or share, or when it overlaps the
   department's destination, and it is checked again at approval and just before the copy.
+  The whole-PC search reads only folder and file names on the PC's own fixed drives (never network
+  drives, Windows, Program Files, recycle bins, links or the departments' copy folders), is bounded
+  by a time limit and can be cancelled; its matches are only suggestions and are never marked Ready.
   Paths are normalised and symlinks/junctions resolved before the check, so a link cannot lead out.
 * Blocked: `..`, absolute paths in names, reserved device names (`CON`, `NUL`, …), alternate data
   streams (`name:stream`), trailing dots/spaces, illegal characters, over-long names, names that

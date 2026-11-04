@@ -30,7 +30,7 @@ which entry and why, and nothing is saved. Settings cannot be saved while a copy
 * **Edit** (or double-click a path, or press F2) changes the selected path in place.
 * **Remove** (or the Delete key) takes the selected path out of the list.
 
-Removing a folder here only stops ContentShare searching it; **nothing on the server is
+These are used by every department that has no folders of its own (see *Departments → Search in*). Removing a folder here only stops ContentShare searching it; **nothing on the server is
 touched**. A folder listed twice (even with different capitals or a trailing backslash) is only
 kept once. Press **Save settings** to keep your changes, then refresh the index (see *Index*).
 
@@ -48,7 +48,7 @@ updates now** does it right away.
 
 ## Departments
 
-Each department is a set of senders and **one folder** its copies go to. Only emails from these
+Each department is a set of senders, **one folder** its copies go to, and (if you want) its own folders to search. Only emails from these
 senders are ever read. Use **Add…**, **Edit…** (or double-click) and **Remove**.
 
 | Field | Meaning |
@@ -56,7 +56,9 @@ senders are ever read. Use **Add…**, **Edit…** (or double-click) and **Remov
 | **Name** | What the department is called in the app. |
 | **Sender emails** | One address per line. Requests from these addresses are read. |
 | **Sender domains** | Optional: anyone at this company domain, for example `example.org`. Public mail services such as `gmail.com` or `outlook.com` are refused, because anyone can have an address there; list those people's addresses instead. |
-| **Copy into** | The department's folder, for example `\\nas02\media\Incoming`. It must not be inside the storage folders, inside Windows or Program Files, or overlap another department's folder. |
+| **Copy into** | The department's folder, for example `\\nas02\media\Incoming`. It must not be inside any folder that is searched (the general storage folders or a department's own), inside Windows or Program Files, or overlap another department's folder. |
+| **Search in** | This department's **own folders** to search: a server, a drive or a folder, as many as you like (add them like the storage folders above). Only these are searched for its requests, so each department can have a different server. Leave the list empty and the department uses the **storage folders** from *General*, as before. |
+| **If not found, search this whole PC** | Off by default. When nothing is found in the folders above, *Choose content* also looks through this PC's own drives by name. It is slower (a minute or two), starts by itself when nothing was found, can be stopped, and only **suggests** matches: nothing found this way is marked Ready, you choose it. It never looks on network drives, in Windows or Program Files, in recycle bins, or in the department's own copy folders. A department with this on may also pick content from anywhere, as with the next row. |
 | **Allow choosing from anywhere** | Off by default. When on, **Browse for a folder… / a file…** in the *Choose content* window accepts a folder or file anywhere on this PC or network, not only inside the storage folders. It is still refused inside Windows or Program Files, for a whole drive, and when it overlaps the department's destination folder. Use it for a department whose content is not kept in one place. |
 | **Folder names** | Tick **The emails give exact folder names** for a department whose requests name the folder exactly as it is on the storage server (one name per line, in a list, or in quotes). ContentShare then looks for folders with exactly those names (capital letters do not matter) and nothing is guessed: one folder of that name is **Ready**, several are **Needs review** so you pick one, and a name that is not found says so. Leave it off for a department whose emails are free-form: you get the closest matches, and you can **Browse for a folder…** yourself. |
 | **Subfolder** | How each program's folder is named inside it. Default `{program}`. You can also use `{date}` and `{department}`. |

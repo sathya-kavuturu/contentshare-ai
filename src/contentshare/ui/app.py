@@ -83,7 +83,7 @@ def build_controller(config_path: Path | None = None) -> Controller:
 
 
 def needs_first_run(controller: Controller) -> bool:
-    return not controller.config.departments or not controller.config.source_roots
+    return not controller.config.departments or not controller.config.all_roots()
 
 
 def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:

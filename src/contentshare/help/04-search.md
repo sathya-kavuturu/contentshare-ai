@@ -66,6 +66,19 @@ once a day.
 * A folder added to the server after the last refresh is **not found by search** until the index
   is refreshed. Browsing for it yourself always works, because that looks at the server directly.
 
+### Which folders are searched
+
+Each department searches **its own folders** (*Settings → Departments → Search in*). A department
+with none uses the **storage folders** from *Settings → General*. So Finance can be searched in one
+server and Media in another, and a program kept only on Media's server is not found for Finance. The
+index (below) holds the names from all of these folders, and each request looks only in its own
+department's part of it.
+
+If a department has **If not found, search this whole PC** ticked and nothing was found, *Choose
+content* then looks through this PC's own drives by name. That search is live (not from the index),
+takes a minute or two, can be stopped, and only suggests: you choose, and nothing found there is
+marked Ready by itself.
+
 ### Finding the program: the default way (closest matches)
 
 This is used for departments whose emails are written freely.

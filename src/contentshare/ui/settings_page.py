@@ -64,6 +64,15 @@ ANYWHERE_HINT = (
     "inside the storage folders (never inside Windows or Program Files, or a whole drive). "
     "Meant for departments whose content is not kept in one place."
 )
+OWN_FOLDERS_HINT = (
+    "The server, drive or folder this department's content is kept in. Only these are searched "
+    "for its requests. Leave the list empty to use the storage folders from General."
+)
+WHOLE_PC_HINT = (
+    "When nothing is found in the folders above, you can also search this PC's own drives "
+    "(never network drives, Windows or Program Files). It is slower, only suggests matches, and "
+    "lets this department pick content from anywhere. Off by default."
+)
 EXACT_HINT = (
     "On: the email names the folders exactly as they are on the storage server (one per line, in "
     "a list, or in quotes). Only folders with exactly those names are used and nothing is guessed. "
@@ -82,6 +91,20 @@ def explain_validation(exc: ValidationError) -> str:
         where = " → ".join(str(p) for p in err["loc"])
         out.append(f"• {where}: {err['msg'].removeprefix('Value error, ')}")
     return "\n".join(out)
+
+
+def with_hint(widget: QWidget, hint_text: str) -> QWidget:
+    """``widget`` with a small explanation under it, as one form field."""
+    holder = QWidget()
+    layout = QVBoxLayout(holder)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(4)
+    hint = QLabel(hint_text)
+    hint.setWordWrap(True)
+    hint.setProperty("role", "small")
+    layout.addWidget(widget)
+    layout.addWidget(hint)
+    return holder
 
 
 def folder_options(
@@ -114,10 +137,44 @@ class DepartmentDialog(QDialog):
     def __init__(self, department: Department | None = None, parent: QWidget | None = None):
         super().__init__(parent)
         self.setWindowTitle("Department")
-        self.resize(560, 520)
-        d = department
-        layout = QVBoxLayout(self)
+        self.resize(660, 760)
+        self.result_department: Department | None = None
+        self._make_fields(department)
         form = QFormLayout()
+        form.addRow("Name", self.name)
+        form.addRow("Sender emails", self.emails)
+        form.addRow("Sender domains", self.domains)
+        form.addRow("Copy into", self._root_row())
+        form.addRow("Search in", with_hint(self.folders, OWN_FOLDERS_HINT))
+        form.addRow("If not found", with_hint(self.whole_pc, WHOLE_PC_HINT))
+        form.addRow("Finding content", self._exact_box)
+        form.addRow("Subfolder", self.pattern)
+        form.addRow("Reply text", self.reply)
+        page = QWidget()
+        page_layout = QVBoxLayout(page)
+        page_layout.addLayout(form)
+        hint = QLabel(
+            "Subfolder can use: " + ", ".join(f"{{{p}}}" for p in sorted(SUBFOLDER_PLACEHOLDERS))
+            + ".  Reply text can use: " + ", ".join(f"{{{p}}}" for p in sorted(REPLY_PLACEHOLDERS))
+        )  # fmt: skip
+        hint.setWordWrap(True)
+        hint.setProperty("role", "muted")
+        page_layout.addWidget(hint)
+        scroll = QScrollArea()  # a long form scrolls instead of overflowing a small screen
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(page)
+        box = QDialogButtonBox()
+        ok = box.addButton("Save department", QDialogButtonBox.ButtonRole.AcceptRole)
+        ok.setProperty("primary", True)
+        box.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
+        box.accepted.connect(self._accept)
+        box.rejected.connect(self.reject)
+        layout = QVBoxLayout(self)
+        layout.addWidget(scroll, 1)
+        layout.addWidget(box)
+
+    def _make_fields(self, d: Department | None) -> None:
         self.name = QLineEdit(d.name if d else "")
         self.emails = QPlainTextEdit("\n".join(d.sender_emails) if d else "")
         self.emails.setFixedHeight(70)
@@ -127,40 +184,26 @@ class DepartmentDialog(QDialog):
         self.domains.setPlaceholderText("example.org (anyone at this domain; optional)")
         self.root = QLineEdit(d.destination_root if d else "")
         self.root.setPlaceholderText(r"\\nas02\media\Incoming   or   D:\Incoming")
-        browse = QPushButton("Browse…")
-        browse.clicked.connect(self._browse)
-        root_row = QHBoxLayout()
-        root_row.addWidget(self.root, 1)
-        root_row.addWidget(browse)
         self.pattern = QLineEdit(d.subfolder_pattern if d else "{program}")
-        self.exact, self.anywhere, exact_box = folder_options(
+        self.exact, self.anywhere, self._exact_box = folder_options(
             bool(d and d.exact_folder_names), bool(d and d.browse_anywhere)
         )
         self.reply = QPlainTextEdit(d.reply_template or "" if d else "")
         self.reply.setPlaceholderText("Leave empty to use the default reply text")
-        form.addRow("Name", self.name)
-        form.addRow("Sender emails", self.emails)
-        form.addRow("Sender domains", self.domains)
-        form.addRow("Copy into", root_row)
-        form.addRow("Finding content", exact_box)
-        form.addRow("Subfolder", self.pattern)
-        form.addRow("Reply text", self.reply)
-        layout.addLayout(form)
-        hint = QLabel(
-            "Subfolder can use: " + ", ".join(f"{{{p}}}" for p in sorted(SUBFOLDER_PLACEHOLDERS))
-            + ".  Reply text can use: " + ", ".join(f"{{{p}}}" for p in sorted(REPLY_PLACEHOLDERS))
-        )  # fmt: skip
-        hint.setWordWrap(True)
-        hint.setProperty("role", "muted")
-        layout.addWidget(hint)
-        box = QDialogButtonBox()
-        ok = box.addButton("Save department", QDialogButtonBox.ButtonRole.AcceptRole)
-        ok.setProperty("primary", True)
-        box.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
-        box.accepted.connect(self._accept)
-        box.rejected.connect(self.reject)
-        layout.addWidget(box)
-        self.result_department: Department | None = None
+        self.folders = FolderList(dialog_title="Choose a folder to search for this department")
+        self.folders.setMinimumHeight(120)
+        self.folders.set_paths(d.source_roots if d else [])
+        self.whole_pc = QCheckBox("If it is not found there, search this whole PC")
+        self.whole_pc.setAccessibleName("Search the whole PC")
+        self.whole_pc.setChecked(bool(d and d.search_whole_pc))
+
+    def _root_row(self) -> QHBoxLayout:
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(self._browse)
+        row = QHBoxLayout()
+        row.addWidget(self.root, 1)
+        row.addWidget(browse)
+        return row
 
     def _browse(self) -> None:
         chosen = choose_folder(self, "Choose the destination folder")
@@ -178,6 +221,8 @@ class DepartmentDialog(QDialog):
                 reply_template=self.reply.toPlainText().strip() or None,
                 exact_folder_names=self.exact.isChecked(),
                 browse_anywhere=self.anywhere.isChecked(),
+                source_roots=self.folders.paths(),
+                search_whole_pc=self.whole_pc.isChecked(),
             )
         except ValidationError as exc:
             QMessageBox.warning(self, "Check the department", explain_validation(exc))
@@ -328,6 +373,13 @@ class SettingsPage(QWidget):
         self.roots = self.folders.list  # the list itself, for callers that read it directly
         self.folders.setMinimumHeight(150)
         form.addRow("Storage folders to search", self.folders)
+        shared = QLabel(
+            "Used by every department that has no folders of its own "
+            "(Settings → Departments → Search in)."
+        )
+        shared.setProperty("role", "small")
+        shared.setWordWrap(True)
+        form.addRow("", shared)
 
         self.default_reply = QPlainTextEdit()
         self.default_reply.setFixedHeight(150)
@@ -343,9 +395,9 @@ class SettingsPage(QWidget):
         layout.addWidget(
             QLabel("Only emails from these senders are read. Each department has one folder.")
         )
-        self.dept_table = QTableWidget(0, 4)
+        self.dept_table = QTableWidget(0, 5)
         self.dept_table.setHorizontalHeaderLabels(
-            ["Department", "Senders", "Copies go to", "Folder names"]
+            ["Department", "Senders", "Copies go to", "Folder names", "Searches in"]
         )
         self.dept_table.setAccessibleName("Departments")
         self.dept_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -360,6 +412,7 @@ class SettingsPage(QWidget):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
         self.dept_table.doubleClicked.connect(lambda _i: self._edit_department())
         layout.addWidget(self.dept_table, 1)
         row = QHBoxLayout()
@@ -466,8 +519,9 @@ class SettingsPage(QWidget):
         form.addRow("Storage index", self.index_state)
         form.addRow("", self.scan_button)
         note = QLabel(
-            "The index lists folder and file names on the storage server so requests can be "
-            "matched quickly. It only reads. A large server can take a while."
+            "The index lists folder and file names in the storage folders (the general ones and "
+            "each department's own) so requests can be matched quickly. It only reads. A large "
+            "server can take a while."
         )
         note.setWordWrap(True)
         note.setProperty("role", "muted")
@@ -649,7 +703,9 @@ class SettingsPage(QWidget):
             senders = ", ".join([*d.sender_emails, *(f"@{x}" for x in d.sender_domains)])
             names = "Exact" if d.exact_folder_names else "Suggested"
             names += " · from anywhere" if d.browse_anywhere else ""
-            for col, text in enumerate([d.name, senders, d.destination_root, names]):
+            searches = "; ".join(d.source_roots) if d.source_roots else "General storage folders"
+            searches += " · then this PC" if d.search_whole_pc else ""
+            for col, text in enumerate([d.name, senders, d.destination_root, names, searches]):
                 self.dept_table.setItem(row, col, QTableWidgetItem(text))
 
     def _add_department(self) -> None:

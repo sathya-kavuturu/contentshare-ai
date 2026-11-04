@@ -133,7 +133,7 @@ class IntakeService:
 
     # ------------------------------------------------------------------ steps
     def _refresh_index(self, report: IntakeReport) -> None:
-        for scan in self.index.scan_all(self.config.source_roots):
+        for scan in self.index.scan_all(self.config.all_roots()):
             if scan.status != "complete":
                 report.warnings.append(f"Could not refresh the index for {scan.root}: {scan.error}")
 
