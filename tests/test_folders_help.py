@@ -282,11 +282,12 @@ def test_a_window_without_an_updater_has_no_box(qtbot: Any, tmp_path: Path, db: 
 # --------------------------------------------------------------------------- help
 def test_all_the_help_topics_are_bundled() -> None:
     topics = load_topics()
-    assert [t.slug for t in topics] == ["start", "gmail", "use", "settings", "trouble"]
+    assert [t.slug for t in topics] == ["start", "gmail", "use", "search", "settings", "trouble"]
     assert [t.title for t in topics] == [
         "Getting started",
         "Connect Gmail",
         "Using the app",
+        "How searching works",
         "Settings explained",
         "Troubleshooting",
     ]
@@ -318,6 +319,7 @@ def test_help_shows_each_topic(qtbot: Any) -> None:
         "start": "five steps",
         "gmail": "client_secret.json",
         "use": "Confirm copy",
+        "search": "Searching the mailbox",
         "settings": "Storage folders to search",
         "trouble": "Where things are kept",
     }
@@ -401,4 +403,34 @@ def test_settings_gmail_tab_links_to_the_gmail_help(rig: Rig) -> None:
 
 
 def test_the_help_folder_exists_where_the_program_looks() -> None:
-    assert HELP_DIR.is_dir() and len(list(HELP_DIR.glob("*.md"))) == 5
+    assert HELP_DIR.is_dir() and len(list(HELP_DIR.glob("*.md"))) == 6
+
+
+def test_the_search_help_quotes_the_real_defaults_and_messages() -> None:
+    """The numbers and card messages in "How searching works" must not drift from the code."""
+    from contentshare.config.models import AppConfig
+    from contentshare.matching.scorer import BONUS, MIN_SHOWN, PATH_FACTOR, PENALTY
+    from contentshare.parsing.request import MAX_ITEMS
+
+    text = {t.slug: t.markdown for t in load_topics()}["search"]
+    config = AppConfig()
+    assert f"**Look back** days ({config.gmail.lookback_days} by default" in text
+    assert f"**Emails per check** of them ({config.gmail.max_messages} by default" in text
+    assert f"({config.matching.auto_ready_score} by default" in text
+    assert f"({config.matching.ambiguity_gap} by default" in text
+    assert f"{MAX_ITEMS} requests" in text and f"{int(MIN_SHOWN)} or more" in text
+    assert PATH_FACTOR < 1  # "counts slightly less"
+    for key, bonus in BONUS.items():
+        assert f"+{int(bonus)}" in text, key
+    for key, penalty in PENALTY.items():
+        assert f"{chr(0x2212)}{int(penalty)}" in text, key
+    for reason in (
+        "Could not tell which program was requested",
+        "No content found for",
+        "Closest match differs from the request",
+        "Best match is only",
+        "similar items found; please pick the right one",
+        "Sender could not be verified",
+        "No folder named",
+    ):
+        assert reason in text, reason

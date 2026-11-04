@@ -70,4 +70,6 @@ Nothing is installed without your click, and the update waits while copies are r
 settings and history are kept. Turn the start-up check off, or check right now, in
 *Settings → General*.
 
+How requests are found, step by step: [How searching works](help:search).
+
 [Settings explained](help:settings)

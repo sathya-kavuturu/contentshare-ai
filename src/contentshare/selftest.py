@@ -111,7 +111,7 @@ def _help_text() -> str:
     from contentshare.ui.help_page import load_topics  # noqa: PLC0415
 
     slugs = {topic.slug for topic in load_topics()}
-    missing = {"start", "gmail", "use", "settings", "trouble"} - slugs
+    missing = {"start", "gmail", "use", "search", "settings", "trouble"} - slugs
     if missing:
         raise RuntimeError(f"help text not found: {', '.join(sorted(missing))}")
     return f"{len(slugs)} help topics bundled"

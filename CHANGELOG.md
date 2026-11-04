@@ -6,6 +6,10 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Help: "How searching works"** explains in plain words how the mailbox is searched (which mail is
+  read, what is checked, how the subject and body are understood) and how folders and files are
+  found (the index, the closest-match scoring, exact folder names, choosing it yourself), with a
+  table of what each "Needs review" reason means.
 - **Allow choosing from anywhere, per department** (Settings → Departments, and the first-run
   setup; off by default). When on, *Browse for a folder… / a file…* accepts content anywhere on the
   PC or network, for departments whose content is not kept in one place. It is refused inside
