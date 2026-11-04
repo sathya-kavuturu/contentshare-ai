@@ -71,9 +71,11 @@ matched the bytes read from the **source**. The steps, per file:
    the file is copied again.
 6. **Atomic rename** to the final name. On Windows this refuses to replace an existing file,
    so a file that appeared meanwhile is never silently overwritten.
-7. Timestamps are preserved. After all files pass, a checksum file
-   (`<folder>.checksums.xxhash`, or `.sha256sum` / `.b3sum`) is written next to them. You can
-   re-check it any time with `xxhsum -c`, `sha256sum -c` or `b3sum --check`.
+7. Timestamps are preserved. Every file has already been checked, so no extra file is left in
+   the destination by default. If you tick *Keep a checksum file in each copied folder*
+   (Settings → Matching and copying), a `<folder>.checksums.xxhash` (or `.sha256sum` / `.b3sum`)
+   is written next to the files, and you can re-check it any time with `xxhsum -c`,
+   `sha256sum -c` or `b3sum --check`.
 
 Retries use exponential backoff (default 3 attempts per file). If a file still fails, the job is
 marked **Failed** with the reason and a Retry button, and the "content shared" reply can never be

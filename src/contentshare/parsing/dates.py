@@ -46,6 +46,7 @@ class DateRef:
     end: date
     span: tuple[int, int] = (0, 0)
     alt: tuple[date, date] | None = None  # the other reading of an ambiguous 03/04/2026
+    year_guessed: bool = False  # written without a year ("12 Oct"), so the year is our guess
 
     def options(self) -> list[tuple[date, date]]:
         return [(self.start, self.end), *([self.alt] if self.alt else [])]
@@ -57,6 +58,18 @@ class DateRef:
         if self.start == self.end:
             return self.start.isoformat()
         return f"{self.start.isoformat()}..{self.end.isoformat()}"
+
+
+def same_days(dates: list[DateRef]) -> list[DateRef]:
+    """Each day once. "12 Oct" in the subject and "12 October 2025" in the body are one day:
+    a date whose year was only guessed is dropped when the same day is also written with a year."""
+
+    def key(d: DateRef) -> tuple[int, int, int, int]:
+        return (d.start.month, d.start.day, d.end.month, d.end.day)
+
+    stated = {key(d) for d in dates if not d.year_guessed}
+    kept = [d for d in dates if not (d.year_guessed and key(d) in stated)]
+    return list({(d.start, d.end): d for d in kept}.values())
 
 
 def _make(year: int, month: int, day: int) -> date | None:
@@ -90,10 +103,10 @@ class _Found:
         return all(span[1] <= a or span[0] >= b for a, b in self._taken)
 
     def add(self, span: tuple[int, int], start: date, end: date | None = None,
-            alt: tuple[date, date] | None = None) -> None:  # fmt: skip
+            alt: tuple[date, date] | None = None, guessed: bool = False) -> None:  # fmt: skip
         if self.free(span):
             self._taken.append(span)
-            self.refs.append(DateRef(start, end or start, span, alt))
+            self.refs.append(DateRef(start, end or start, span, alt, guessed))
 
 
 def _numeric(match: re.Match[str], day_first: bool) -> tuple[date, tuple[date, date] | None] | None:
@@ -136,13 +149,13 @@ def _scan_textual_forms(text: str, found: _Found, today: date) -> None:
         lo = _day_in_month(month, int(m[1]), year, today)
         hi = _day_in_month(month, int(m[2]), year, today)
         if lo and hi and lo <= hi:
-            found.add(m.span(), lo, hi)
+            found.add(m.span(), lo, hi, guessed=year is None)
     for m in _DAY_MONTH.finditer(text):
         if d := _day_in_month(_MONTHS[m[2].lower()], int(m[1]), _year(m[3]), today):
-            found.add(m.span(), d)
+            found.add(m.span(), d, guessed=not m[3])
     for m in _MONTH_DAY.finditer(text):
         if d := _day_in_month(_MONTHS[m[1].lower()], int(m[2]), _year(m[3]), today):
-            found.add(m.span(), d)
+            found.add(m.span(), d, guessed=not m[3])
     for m in _RELATIVE.finditer(text):
         if d := _relative(m[1].lower(), today):
             found.add(m.span(), d)

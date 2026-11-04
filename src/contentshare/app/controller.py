@@ -14,6 +14,7 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 import threading
 from collections.abc import Callable, Iterable
 from concurrent.futures import Future
@@ -30,7 +31,7 @@ from contentshare.gmail.errors import AuthRequiredError, GmailError
 from contentshare.gmail.gateway import GmailGateway
 from contentshare.gmail.intake import IntakeReport, IntakeService
 from contentshare.gmail.replies import ReplyDraft, ReplyError, ReplyResult, ReplyService
-from contentshare.index.store import ContentIndex, ScanReport, measure
+from contentshare.index.store import ContentIndex, IndexedItem, ScanReport, measure
 from contentshare.jobs.copy_job import CopyJobRunner, JobOutcome, options_from_config, paths_overlap
 from contentshare.jobs.queue import CopyQueue
 from contentshare.jobs.states import InvalidTransitionError, RequestState
@@ -337,10 +338,55 @@ class Controller:
         row = self._row(request_id)
         if row["state"] not in (S.NEEDS_REVIEW, S.READY):
             raise ActionError("This request can no longer be changed")
-        dept = self._department(row["department"])
         indexed = self.index.get(item_id)
         if indexed is None:
             raise ActionError("That content is not in the index any more; refresh the index")
+        self._use_content(row, indexed)
+
+    def choose_path(self, request_id: int, path: str) -> None:
+        """The user browsed to a folder or file on the storage server instead of searching.
+        It must be inside one of the source folders (and not a source folder itself). It does
+        not have to be in the index, so content added since the last index refresh works."""
+        row = self._row(request_id)
+        if row["state"] not in (S.NEEDS_REVIEW, S.READY):
+            raise ActionError("This request can no longer be changed")
+        found = None
+        for root in self.config.source_roots:
+            try:
+                source = resolve_within(root, path.strip())
+                found = (root, source, source.relative_to(Path(os.path.realpath(root))))
+                break
+            except (PathSafetyError, ValueError):
+                continue
+        if found is None:
+            raise ActionError(
+                "That is outside the storage folders in Settings. "
+                "Choose something inside one of them."
+            )
+        root, source, relative = found
+        if not relative.parts:
+            raise ActionError(
+                "Choose a folder or file inside a storage folder, not the storage folder itself"
+            )
+        rel = relative.as_posix()
+        indexed = self.index.find_path(root, rel)
+        if indexed is None:  # new since the last scan: describe it from the disk
+            try:
+                measured = measure(source)
+            except OSError as exc:
+                raise ActionError(f"Cannot read that content: {exc}") from exc
+            if measured is None:
+                raise ActionError("That content is not on the storage server")
+            indexed = IndexedItem(
+                0, root, rel, source.name, "dir" if source.is_dir() else "file",
+                measured[0], measured[1], 0, rel.count("/"),
+            )  # fmt: skip
+        self._use_content(row, indexed)
+
+    def _use_content(self, row: dict[str, Any], indexed: IndexedItem) -> None:
+        """Point the request at this content (checked again on disk) and make it READY."""
+        request_id = int(row["id"])
+        dept = self._department(row["department"])
         try:
             source = resolve_within_any(self.config.source_roots, indexed.full_path)
         except PathSafetyError as exc:

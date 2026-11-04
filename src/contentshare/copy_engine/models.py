@@ -83,6 +83,7 @@ class Plan:
 @dataclass(frozen=True)
 class CopyOptions:
     algorithm: str = "xxh3_128"
+    write_checksum_file: bool = True  # leave <folder>.checksums.<ext> beside the copied files
     chunk_bytes: int = 8 * MIB
     max_attempts: int = 3
     backoff_base_s: float = 1.0

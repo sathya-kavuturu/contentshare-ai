@@ -19,7 +19,7 @@ from contentshare.parsing.attributes import (
     find_parts,
     program_words,
 )
-from contentshare.parsing.dates import DateRef, find_dates, remove_spans
+from contentshare.parsing.dates import DateRef, find_dates, remove_spans, same_days
 from contentshare.parsing.text import clean_body, clean_subject, strip_links
 
 MAX_ITEMS = 20
@@ -138,7 +138,7 @@ def _make_items(
     raw: str,
 ) -> list[RequestItem]:
     # The subject and the body often both give the date: count the same day only once.
-    dates = list({(d.start, d.end): d for d in dates}.values())
+    dates = same_days(dates)
     if len(dates) > 1:  # "12 Oct and 19 Oct": one request line per date
         return [RequestItem(program, (d,), language, part, formats, raw) for d in dates]
     return [RequestItem(program, tuple(dates), language, part, formats, raw)]

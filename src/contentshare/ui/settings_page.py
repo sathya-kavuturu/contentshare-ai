@@ -308,6 +308,7 @@ class SettingsPage(QWidget):
         self.ready_score.setRange(50, 100)
         self.gap = QSpinBox()
         self.gap.setRange(0, 50)
+        self.keep_checksums = QCheckBox("Keep a checksum file in each copied folder")
         self.hash = QComboBox()
         self.hash.addItems(HASHES)
         self.concurrency = QSpinBox()
@@ -317,6 +318,7 @@ class SettingsPage(QWidget):
         form.addRow("Mark Ready when at least", self.ready_score)
         form.addRow("…and clearly ahead of the next by", self.gap)
         form.addRow("Verification checksum", self.hash)
+        form.addRow("", self.keep_checksums)
         form.addRow("Copies at the same time", self.concurrency)
         form.addRow("Attempts per file", self.attempts)
         note = QLabel(
@@ -371,6 +373,7 @@ class SettingsPage(QWidget):
         self.ready_score.setValue(c.matching.auto_ready_score)
         self.gap.setValue(c.matching.ambiguity_gap)
         self.hash.setCurrentText(c.copy_options.hash_algorithm)
+        self.keep_checksums.setChecked(c.copy_options.write_checksum_file)
         self.concurrency.setValue(c.copy_options.concurrency)
         self.attempts.setValue(c.copy_options.max_attempts)
         self._refresh_status()
@@ -409,6 +412,7 @@ class SettingsPage(QWidget):
         )
         base["copy_options"].update(
             hash_algorithm=self.hash.currentText(),
+            write_checksum_file=self.keep_checksums.isChecked(),
             concurrency=self.concurrency.value(),
             max_attempts=self.attempts.value(),
         )

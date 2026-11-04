@@ -317,8 +317,20 @@ class RequestCard(QFrame):
     # ------------------------------------------------------------------ actions
     def _search_manually(self) -> None:
         dialog = CandidateDialog(self.ctx.controller, self.view, self)
-        if dialog.exec() and dialog.chosen is not None:
+        if not dialog.exec():
+            return
+        if dialog.chosen_path is not None:
+            self._choose_path(dialog.chosen_path)
+        elif dialog.chosen is not None:
             self._choose(dialog.chosen.item_id)
+
+    def _choose_path(self, path: str) -> None:
+        self._busy(True)
+        self.ctx.bridge.work(
+            lambda: self.ctx.controller.choose_path(self.view.id, path),
+            on_done=lambda _r: self.ctx.say(f"Request #{self.view.id}: content chosen"),
+            on_error=self._on_error("Cannot use that"),
+        )
 
     def _choose(self, item_id: int | None) -> None:
         if item_id is None:

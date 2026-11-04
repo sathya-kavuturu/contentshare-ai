@@ -45,6 +45,9 @@ class CandidateDialog(QDialog):
         self.resize(760, 480)
         self._controller, self._view = controller, view
         self.chosen: CandidateView | None = None
+        self.chosen_path: str | None = None  # a folder or file picked with Browse
+        self._browsed: str | None = None
+        self._shown: list[CandidateView] = []
 
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(f"Requested: {view.requested}"))
@@ -56,6 +59,16 @@ class CandidateDialog(QDialog):
         row.addWidget(self.query, 1)
         row.addWidget(go)
         layout.addLayout(row)
+        browse_row = QHBoxLayout()
+        browse_row.addWidget(QLabel("Or pick it yourself:"))
+        self.browse_folder = QPushButton("Browse for a folder…")
+        self.browse_folder.clicked.connect(self._browse_folder)
+        self.browse_file = QPushButton("Browse for a file…")
+        self.browse_file.clicked.connect(self._browse_file)
+        browse_row.addWidget(self.browse_folder)
+        browse_row.addWidget(self.browse_file)
+        browse_row.addStretch(1)
+        layout.addLayout(browse_row)
         self.results = QListWidget()
         self.results.setAccessibleName("Matching content")
         self.results.itemDoubleClicked.connect(lambda _i: self.accept())
@@ -73,8 +86,37 @@ class CandidateDialog(QDialog):
         found = self._controller.search(self._view.id, text)
         self._show(found, f"{len(found)} result(s)" if found else "Nothing found for that name.")
 
+    def _start_folder(self) -> str:
+        roots = self._controller.config.source_roots
+        return roots[0] if roots else ""
+
+    def _browse_folder(self) -> None:
+        chosen = QFileDialog.getExistingDirectory(
+            self, "Choose the folder to copy", self._start_folder()
+        )
+        if chosen:
+            self._browsed_pick(chosen)
+
+    def _browse_file(self) -> None:
+        chosen, _filter = QFileDialog.getOpenFileName(
+            self, "Choose the file to copy", self._start_folder()
+        )
+        if chosen:
+            self._browsed_pick(chosen)
+
+    def _browsed_pick(self, chosen: str) -> None:
+        self._browsed = chosen.replace("/", "\\")
+        self._show(
+            self._shown, "Your pick is first. It must be inside a storage folder in Settings."
+        )
+
     def _show(self, candidates: list[CandidateView], hint: str) -> None:
+        self._shown = candidates
         self.results.clear()
+        if self._browsed:
+            pick = QListWidgetItem(f"You chose:\n    {self._browsed}")
+            pick.setData(Qt.ItemDataRole.UserRole, self._browsed)
+            self.results.addItem(pick)
         for c in candidates:
             item = QListWidgetItem(
                 f"{c.path}\n    {format_bytes(c.size)} · {c.file_count} file(s) · "
@@ -90,7 +132,11 @@ class CandidateDialog(QDialog):
         item = self.results.currentItem()
         if item is None:
             return
-        self.chosen = item.data(Qt.ItemDataRole.UserRole)
+        data = item.data(Qt.ItemDataRole.UserRole)
+        if isinstance(data, str):
+            self.chosen_path = data
+        else:
+            self.chosen = data
         super().accept()
 
 

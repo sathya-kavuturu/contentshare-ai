@@ -176,7 +176,7 @@ def preflight(plan: Plan, options: CopyOptions, *, create_dirs: bool = True) -> 
         problems.append(f"Destination location is not a folder: {ancestor}")
 
     mname = manifest_path(plan, options.algorithm).name.casefold()
-    if any(f.rel.casefold() == mname for f in plan.files):
+    if options.write_checksum_file and any(f.rel.casefold() == mname for f in plan.files):
         problems.append(f"A source file is named like the checksum file: {mname}")
 
     needed = _bytes_needed(plan, options, problems)
@@ -500,7 +500,7 @@ def copy_tree(
         cleanup_partials(plan.dst)
 
     tree = TreeResult(results, cancelled=cancelled, duration_s=time.monotonic() - started)
-    if tree.ok:
+    if tree.ok and options.write_checksum_file:
         tree.manifest_path = write_manifest(plan, options.algorithm, results)
     return tree
 

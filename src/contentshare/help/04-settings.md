@@ -77,6 +77,7 @@ senders are ever read. Use **Add…**, **Edit…** (or double-click) and **Remov
 | **Mark Ready when at least** | How good a match must score (50–100) before a card says **Ready**. Anything lower is **Needs review**. |
 | **…and clearly ahead of the next by** | A match must also beat the runner-up by this many points, so two near-identical programs are never picked automatically. |
 | **Verification checksum** | How copies are compared with the originals: `xxh3_128` (fastest, the default), `blake3`, or `sha256`. All are reliable for catching damaged copies. |
+| **Keep a checksum file in each copied folder** | Off by default. Every file is already checked against the original while it is copied, whether or not this is on. Switch it on to also leave a `<folder>.checksums` file beside the copy, which anyone can use later to check the files again (`xxhsum -c`, `sha256sum -c`). |
 | **Copies at the same time** | 1–4 programs copied together. Use 1 if the network share struggles. |
 | **Attempts per file** | How many times a file that fails verification is copied again before the request shows **Failed**. |
 

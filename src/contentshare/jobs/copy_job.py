@@ -51,6 +51,7 @@ def options_from_config(
     c = config.copy_options
     return CopyOptions(
         algorithm=c.hash_algorithm,
+        write_checksum_file=c.write_checksum_file,
         chunk_bytes=c.chunk_mb * MIB,
         max_attempts=c.max_attempts,
         free_space_margin_pct=c.free_space_margin_pct,

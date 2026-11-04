@@ -80,7 +80,7 @@ def test_successful_job_verifies_and_journals(world, repo: Repository) -> None: 
     assert row["file_count"] == 2
     assert row["total_bytes"] == 2 * MIB + 5 + 5
     assert (dst / "video.mxf").read_bytes() == (program / "video.mxf").read_bytes()
-    assert (dst / "ProgramX.checksums.xxhash").exists()
+    assert not (dst / "ProgramX.checksums.xxhash").exists()  # only when the setting asks for it
 
     jobs = repo.list_jobs(rid)
     assert [(j["state"], j["attempt"]) for j in jobs] == [("VERIFIED", 1)]

@@ -138,6 +138,9 @@ class CopySettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     hash_algorithm: Literal["xxh3_128", "blake3", "sha256"] = "xxh3_128"
+    # Every file is always checked against the original while copying. This only decides whether
+    # a checksum file is also left in the copied folder for checking again later.
+    write_checksum_file: bool = False
     chunk_mb: Annotated[int, Field(ge=1, le=64)] = 8
     concurrency: Annotated[int, Field(ge=1, le=4)] = 2
     max_attempts: Annotated[int, Field(ge=1, le=10)] = 3

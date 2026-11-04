@@ -16,9 +16,15 @@ uses [semantic versioning](https://semver.org/).
   bundled in the program, works offline, and the self-test checks it is present.
 - Settings → Gmail has a "How do I get this file?" button that opens the Gmail help.
 
+- **Browse for the content yourself** when choosing it for a request: *Browse for a folder…* and
+  *Browse for a file…* in the "Choose content" window, opening at the storage server. The pick must
+  be inside a storage folder in Settings; it need not be in the index.
 - **Appearance** in Settings → General: *Same as Windows*, *Light* or *Dark*, applied at once.
 
 ### Changed
+- **No checksum file is left in the copied folder any more.** Every file is still checked against
+  the original while it is copied; the extra `<folder>.checksums.xxhash` file is now optional
+  (Settings → Matching and copying → *Keep a checksum file in each copied folder*, off by default).
 - Times in the lists, the request cards, the audit trail and Settings → Index are now shown on the
   computer's own clock. They were shown in UTC, which is a different time in most time zones.
 - The first screen of the first-run setup no longer has a Back button.
@@ -27,6 +33,9 @@ uses [semantic versioning](https://semver.org/).
 - Settings and Help are laid out in the background shortly after start, so they open at once.
 
 ### Fixed
+- **One email could create two requests** when the same day was written with and without a year
+  (for example "12 Oct" in the subject and "12 October 2025" in the message). The day is now
+  counted once, using the year that was written.
 - **The box for editing a storage path was too thin** to read the path; it now fills the row.
 - **Storage folders could not be edited or removed in the first-run setup**, and could not be
   edited in Settings. Both now use one list with **Add folder…**, a type-or-paste box, **Edit**
