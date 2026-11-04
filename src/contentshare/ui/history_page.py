@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from contentshare.app.controller import Event, RequestView
 from contentshare.ui.context import UiContext
 from contentshare.ui.status import STATUS, style_for
+from contentshare.ui.timefmt import local_stamp
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
@@ -52,7 +53,7 @@ def audit_text(entries: list[dict[str, object]]) -> str:
         reason = detail.get("reason") if isinstance(detail, dict) else None
         to = f" → {detail['to']}" if isinstance(detail, dict) and detail.get("to") else ""
         lines.append(
-            f"{str(entry['ts'])[:19].replace('T', ' ')}  {entry['actor']:<7} {entry['event']}"
+            f"{local_stamp(entry['ts'], seconds=True)}  {entry['actor']:<7} {entry['event']}"
             f"{to}{(' · ' + str(reason)) if reason else ''}"
         )
     return "\n".join(lines)
@@ -130,7 +131,7 @@ class HistoryPage(QWidget):
         self.table.setRowCount(len(self._views))
         for row, v in enumerate(self._views):
             cells = [
-                str(v.id), v.received_at[:16].replace("T", " "),
+                str(v.id), local_stamp(v.received_at),
                 f"{v.sender_name or v.sender_email}", v.department or "—", v.requested,
                 style_for(v.state).text,
                 str(v.file_count) if v.file_count is not None else "",

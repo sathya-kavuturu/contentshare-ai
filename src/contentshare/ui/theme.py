@@ -14,6 +14,8 @@ from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QColor, QPainter, QPalette, QPen, QPixmap
 from PySide6.QtWidgets import QApplication
 
+THEME_PROPERTY = "contentshare_theme"  # which theme the application is showing now
+
 
 @dataclass(frozen=True)
 class Tone:
@@ -65,6 +67,15 @@ DARK = Theme(
 def detect_theme(app: QApplication) -> Theme:
     scheme = app.styleHints().colorScheme()
     return DARK if scheme == Qt.ColorScheme.Dark else LIGHT
+
+
+def theme_for(appearance: str, app: QApplication) -> Theme:
+    """The theme for the Appearance setting: "light", "dark", or "system" (follow Windows)."""
+    if appearance == "dark":
+        return DARK
+    if appearance == "light":
+        return LIGHT
+    return detect_theme(app)
 
 
 def check_icon(t: Theme) -> Path:
@@ -140,7 +151,7 @@ QProgressBar {{ background: {t.window}; border: 1px solid {t.border}; border-rad
     height: 14px; text-align: center; color: {t.text}; }}
 QProgressBar::chunk {{ background: {t.accent}; border-radius: 5px; }}
 QTabWidget::pane {{ border: 1px solid {t.border}; border-radius: 6px; background: {t.card}; }}
-QTabBar::tab {{ padding: 8px 16px; color: {t.muted}; }}
+QTabBar::tab {{ padding: 8px 16px; color: {t.muted}; border: none; background: transparent; }}
 QTabBar::tab:selected {{ color: {t.text}; border-bottom: 2px solid {t.accent}; }}
 QScrollArea {{ border: none; background: transparent; }}
 QStatusBar {{ background: {t.card}; color: {t.muted}; border-top: 1px solid {t.border}; }}
@@ -167,7 +178,13 @@ def palette_for(t: Theme) -> QPalette:
 
 def apply_theme(app: QApplication, theme: Theme | None = None) -> Theme:
     theme = theme or detect_theme(app)
-    app.setStyle("Fusion")  # consistent base on every Windows 11 setup; the sheet does the rest
+    if app.property(THEME_PROPERTY) == theme.name:
+        return theme  # already showing it; restyling every widget again would only be slow
+    if app.property(THEME_PROPERTY) is None:  # once: setting a style again under a style sheet
+        app.setStyle(
+            "Fusion"
+        )  # can crash Qt. Fusion is a consistent base on every Windows 11 setup
     app.setPalette(palette_for(theme))  # so checkboxes, menus and dialogs follow the theme too
     app.setStyleSheet(stylesheet(theme, check_icon(theme)))
+    app.setProperty(THEME_PROPERTY, theme.name)
     return theme

@@ -31,6 +31,7 @@ from contentshare.ui.history_page import HistoryPage
 from contentshare.ui.icons import app_icon
 from contentshare.ui.requests_page import RequestsPage, summarize_check
 from contentshare.ui.settings_page import SettingsPage
+from contentshare.ui.theme import apply_theme, theme_for
 from contentshare.ui.tray import Tray
 from contentshare.ui.update_card import UpdateCard
 from contentshare.ui.widgets import Label as QLabel
@@ -38,6 +39,7 @@ from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
 PAGES = ["Requests", "Active copies", "History", "Settings", "Help"]
 
+WARM_UP_DELAY_MS = 800
 UPDATE_CHECK_DELAY_MS = 4000  # let the window appear and the first work settle before the check
 
 
@@ -125,6 +127,7 @@ class MainWindow(QMainWindow):
     def _connect_services(self) -> None:
         self.bridge.app_event.connect(self._on_event)
         self.settings.saved.connect(self._settings_saved)
+        self.settings.appearance_changed.connect(self._appearance_changed)
         self.settings.open_help.connect(self.show_help)
         self.settings.update_check_requested.connect(self.check_for_updates)
         if self.update_card is not None:
@@ -150,6 +153,16 @@ class MainWindow(QMainWindow):
         self.show_window("Help")
         if topic:
             self.help.show_topic(topic)
+
+    def warm_up_pages(self) -> None:
+        """Lay out and paint the heavier screens once while the person is still reading the
+        first one, so opening Settings or Help later is instant."""
+
+        def warm() -> None:
+            for page in (self.settings, self.help):
+                page.grab()
+
+        QTimer.singleShot(WARM_UP_DELAY_MS, warm)
 
     # ------------------------------------------------------------------ updates
     def start_update_check(self) -> None:
@@ -188,6 +201,12 @@ class MainWindow(QMainWindow):
         )
 
     # ------------------------------------------------------------------ settings, schedule
+    def _appearance_changed(self, appearance: str) -> None:
+        app = QApplication.instance()
+        if isinstance(app, QApplication):
+            apply_theme(app, theme_for(appearance, app))  # does nothing if it is already shown
+            self.help.restyle()
+
     def _settings_saved(self) -> None:
         if self.automation is not None:
             self.automation.config_changed()

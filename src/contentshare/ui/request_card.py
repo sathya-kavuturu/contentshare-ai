@@ -30,6 +30,7 @@ from contentshare.ui.dialogs import (
     ReplyDialog,
 )
 from contentshare.ui.status import confidence_dots, style_for
+from contentshare.ui.timefmt import local_stamp
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
@@ -121,7 +122,7 @@ class RequestCard(QFrame):
         else:
             head.addWidget(_chip("⚠ Sender NOT verified", "warn"))
         head.addStretch(1)
-        head.addWidget(_label(v.received_at[:16].replace("T", " "), "muted", wrap=False))
+        head.addWidget(_label(local_stamp(v.received_at), "muted", wrap=False))
         root.addLayout(head)
 
         who = f"{v.sender_name} <{v.sender_email}>" if v.sender_name else v.sender_email

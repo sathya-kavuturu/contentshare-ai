@@ -16,7 +16,18 @@ uses [semantic versioning](https://semver.org/).
   bundled in the program, works offline, and the self-test checks it is present.
 - Settings → Gmail has a "How do I get this file?" button that opens the Gmail help.
 
+- **Appearance** in Settings → General: *Same as Windows*, *Light* or *Dark*, applied at once.
+
+### Changed
+- Times in the lists, the request cards, the audit trail and Settings → Index are now shown on the
+  computer's own clock. They were shown in UTC, which is a different time in most time zones.
+- The first screen of the first-run setup no longer has a Back button.
+- The folder pickers always open in a local folder. Windows used to reopen them in the last folder
+  used, which after browsing a network share meant waiting for that server.
+- Settings and Help are laid out in the background shortly after start, so they open at once.
+
 ### Fixed
+- **The box for editing a storage path was too thin** to read the path; it now fills the row.
 - **Storage folders could not be edited or removed in the first-run setup**, and could not be
   edited in Settings. Both now use one list with **Add folder…**, a type-or-paste box, **Edit**
   (also double-click or F2) and **Remove** (also the Delete key). The same folder written two ways

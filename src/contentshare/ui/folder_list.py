@@ -7,26 +7,43 @@ from __future__ import annotations
 
 import ntpath
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QModelIndex, QPersistentModelIndex, QSize, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QFileDialog,
     QHBoxLayout,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
     QVBoxLayout,
     QWidget,
 )
 
+from contentshare.ui.pickers import choose_folder
 from contentshare.ui.widgets import Label as QLabel
 
 
 def _same(path: str) -> str:
     """Two spellings of one folder (case, slashes, a trailing backslash) compare equal."""
     return ntpath.normcase(ntpath.normpath(path)) if path.strip() else ""
+
+
+ROW_HEIGHT = 34  # tall enough for the editing box, which has its own padding and border
+
+
+class _RowEditorDelegate(QStyledItemDelegate):
+    """Edits a path in a box that fills the whole row, so a long path is easy to read."""
+
+    def updateEditorGeometry(  # noqa: N802 - Qt override
+        self,
+        editor: QWidget,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> None:
+        editor.setGeometry(option.rect)
 
 
 class FolderList(QWidget):
@@ -44,6 +61,7 @@ class FolderList(QWidget):
         self.list = QListWidget()
         self.list.setAccessibleName("Folders")
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.list.setItemDelegate(_RowEditorDelegate(self.list))
         self.list.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked
             | QAbstractItemView.EditTrigger.EditKeyPressed
@@ -110,6 +128,7 @@ class FolderList(QWidget):
         self.note.setText("")
         item = QListWidgetItem(path)
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+        item.setSizeHint(QSize(0, ROW_HEIGHT))
         self.list.addItem(item)
         self.list.setCurrentItem(item)
         return True
@@ -120,9 +139,9 @@ class FolderList(QWidget):
             self.typed.clear()
 
     def _browse(self) -> None:
-        chosen = QFileDialog.getExistingDirectory(self, self._dialog_title)
+        chosen = choose_folder(self, self._dialog_title)
         if chosen:
-            self.add(chosen.replace("/", "\\"))
+            self.add(chosen)
 
     def edit_selected(self) -> None:
         item = self.list.currentItem()

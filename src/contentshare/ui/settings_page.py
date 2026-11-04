@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
-    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLineEdit,
@@ -33,12 +32,15 @@ from contentshare.config.models import AppConfig, Department
 from contentshare.config.templates import REPLY_PLACEHOLDERS, SUBFOLDER_PLACEHOLDERS
 from contentshare.ui.context import UiContext
 from contentshare.ui.folder_list import FolderList
+from contentshare.ui.pickers import choose_file, choose_folder
+from contentshare.ui.timefmt import local_stamp
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
 log = logging.getLogger(__name__)
 
 HASHES = ["xxh3_128", "blake3", "sha256"]
+APPEARANCES = [("system", "Same as Windows"), ("light", "Light"), ("dark", "Dark")]
 
 
 def lines(text: str) -> list[str]:
@@ -103,9 +105,9 @@ class DepartmentDialog(QDialog):
         self.result_department: Department | None = None
 
     def _browse(self) -> None:
-        chosen = QFileDialog.getExistingDirectory(self, "Choose the destination folder")
+        chosen = choose_folder(self, "Choose the destination folder")
         if chosen:
-            self.root.setText(chosen.replace("/", "\\"))
+            self.root.setText(chosen)
 
     def _accept(self) -> None:
         try:
@@ -127,6 +129,7 @@ class SettingsPage(QWidget):
     saved = Signal()  # settings were stored (the window re-reads schedule and tray options)
     open_help = Signal(str)  # a Help topic to show, for example "gmail"
     update_check_requested = Signal()  # "Check for updates now"
+    appearance_changed = Signal(str)  # "system" | "light" | "dark": show it now (not yet saved)
 
     def __init__(self, ctx: UiContext, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -185,6 +188,14 @@ class SettingsPage(QWidget):
         self.start_note.setProperty("role", "muted")
         self.to_tray = QCheckBox("Keep running in the tray when the window is closed")
         self.notify = QCheckBox("Show pop-up notifications (counts only, never email text)")
+        self.appearance = QComboBox()
+        self.appearance.setAccessibleName("Appearance")
+        for value, text in APPEARANCES:
+            self.appearance.addItem(text, value)
+        self.appearance.activated.connect(
+            lambda _i: self.appearance_changed.emit(self._appearance())
+        )
+        form.addRow("Appearance", self.appearance)
         form.addRow("", self.daily_enabled)
         form.addRow("Daily check at", self.check_time)
         form.addRow("", self.missed)
@@ -337,6 +348,8 @@ class SettingsPage(QWidget):
         c = self.ctx.controller.config
         hour, minute = (int(p) for p in c.schedule.daily_check_time.split(":"))
         self.check_time.setTime(QTime(hour, minute))
+        self.appearance.setCurrentIndex(self.appearance.findData(c.appearance))
+        self.appearance_changed.emit(c.appearance)  # also undoes an unsaved preview (Revert)
         self.missed.setChecked(c.schedule.run_missed_check_on_startup)
         self.daily_enabled.setChecked(c.schedule.daily_check_enabled)
         self.to_tray.setChecked(c.schedule.close_to_tray)
@@ -374,6 +387,7 @@ class SettingsPage(QWidget):
             notifications=self.notify.isChecked(),
             start_with_windows=self.start_login.isChecked(),
         )
+        base["appearance"] = self._appearance()
         base["auto_reply_default"] = self.auto_default.isChecked()
         base["dry_run"] = self.dry_run.isChecked()
         base["updates"]["check_on_start"] = self.check_updates.isChecked()
@@ -421,6 +435,9 @@ class SettingsPage(QWidget):
         self.start_note.setText(self._startup_text())
         self.saved.emit()
         return True
+
+    def _appearance(self) -> str:
+        return str(self.appearance.currentData() or "system")
 
     # ------------------------------------------------------------------ start at login
     def _startup_text(self) -> str:
@@ -483,11 +500,9 @@ class SettingsPage(QWidget):
             self._fill_departments()
 
     def _browse_secret(self) -> None:
-        path, _f = QFileDialog.getOpenFileName(
-            self, "Choose client_secret.json", "", "JSON (*.json)"
-        )
+        path = choose_file(self, "Choose client_secret.json", "JSON (*.json)")
         if path:
-            self.secret.setText(path.replace("/", "\\"))
+            self.secret.setText(path)
 
     def _refresh_status(self) -> None:
         controller = self.ctx.controller
@@ -496,7 +511,7 @@ class SettingsPage(QWidget):
         self.connect_button.setEnabled(not connected)
         self.disconnect_button.setEnabled(connected)
         summary = controller.index_summary()
-        when = str(summary["last_scan"])[:16].replace("T", " ") if summary["last_scan"] else "never"
+        when = local_stamp(summary["last_scan"], empty="never")
         self.index_state.setText(
             f"{summary['items']:,} items indexed ({summary['folders']:,} folders); "
             f"last complete scan: {when}"

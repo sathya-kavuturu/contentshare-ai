@@ -5,7 +5,6 @@ from __future__ import annotations
 from pydantic import ValidationError
 from PySide6.QtWidgets import (
     QCheckBox,
-    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QLineEdit,
@@ -19,6 +18,7 @@ from PySide6.QtWidgets import (
 
 from contentshare.config.models import AppConfig, Department
 from contentshare.ui.folder_list import FolderList
+from contentshare.ui.pickers import choose_folder
 from contentshare.ui.settings_page import explain_validation, lines
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
@@ -37,6 +37,7 @@ class FirstRunWizard(QWizard):
         super().__init__(parent)
         self.setWindowTitle("Welcome to ContentShare")
         self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
+        self.setOption(QWizard.WizardOption.NoBackButtonOnStartPage)  # nothing to go back to
         self.resize(680, 520)
         self._base = base
         self.result_config: AppConfig | None = None
@@ -143,9 +144,9 @@ class FirstRunWizard(QWizard):
         self.folders.add_typed()
 
     def _browse_dest(self) -> None:
-        chosen = QFileDialog.getExistingDirectory(self, "Choose the destination folder")
+        chosen = choose_folder(self, "Choose the destination folder")
         if chosen:
-            self.dept_root.setText(chosen.replace("/", "\\"))
+            self.dept_root.setText(chosen)
 
     def build_config(self) -> AppConfig:
         """Raises ``ValidationError`` when something typed here is not acceptable."""

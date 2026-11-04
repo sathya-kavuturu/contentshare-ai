@@ -35,7 +35,7 @@ from contentshare.ui.bridge import Bridge
 from contentshare.ui.icons import app_icon
 from contentshare.ui.main_window import MainWindow
 from contentshare.ui.single_instance import SingleInstance
-from contentshare.ui.theme import apply_theme
+from contentshare.ui.theme import apply_theme, theme_for
 from contentshare.ui.tray import Tray
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 from contentshare.ui.wizard import FirstRunWizard
@@ -155,6 +155,7 @@ def _run(app: QApplication, instance: SingleInstance, *, background: bool) -> in
         )  # fmt: skip
         return 1
     log.info("started; log file %s", log_path)
+    apply_theme(app, theme_for(controller.config.appearance, app))  # the Appearance setting
 
     bridge = Bridge()
     controller.subscribe(bridge.forward)
@@ -186,6 +187,7 @@ def _run(app: QApplication, instance: SingleInstance, *, background: bool) -> in
         window.show()
     automation.start()
     window.update_chrome()
+    window.warm_up_pages()
     window.start_update_check()
 
     # After a crash or restart: finish what the user had already approved, and settle replies

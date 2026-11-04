@@ -8,6 +8,7 @@ which entry and why, and nothing is saved. Settings cannot be saved while a copy
 
 | Setting | What it does |
 |---|---|
+| **Appearance** | *Same as Windows*, *Light* or *Dark*. The window changes as soon as you choose; **Save settings** keeps the choice for next time (Revert undoes it). |
 | **Check for requests every day** | Lets ContentShare read new mail by itself once a day. It only adds cards; it never copies or sends. |
 | **Daily check at** | The time of that check (24-hour clock). |
 | **Check for requests when the app starts if the daily check was missed** | If the PC was off at check time, check as soon as ContentShare starts. |

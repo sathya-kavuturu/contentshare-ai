@@ -15,6 +15,7 @@ from pathlib import Path
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
@@ -113,6 +114,11 @@ class HelpPage(QWidget):
     def current_slug(self) -> str:
         row = self.topic_list.currentRow()
         return self.topics[row].slug if 0 <= row < len(self.topics) else ""
+
+    def restyle(self) -> None:
+        """After the theme changed: the text view keeps the link colour it was created with."""
+        self.browser.setPalette(QApplication.palette())
+        self._show_row(self.topic_list.currentRow())
 
     def _show_row(self, row: int) -> None:
         if 0 <= row < len(self.topics):
