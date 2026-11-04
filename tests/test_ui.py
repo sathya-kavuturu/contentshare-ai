@@ -474,7 +474,16 @@ def test_active_copies_shows_progress_and_pause(
     assert row.pause.text() == "Pause"
     rig.window.update_chrome()
     assert rig.window.nav.item(1).text() == "Active copies (1)"
-    row.cancel.click()  # answered Yes
+    cancelled: list[int] = []
+    real_cancel = rig.controller.cancel
+    monkeypatch.setattr(rig.controller, "cancel", cancelled.append)
+    boxes.answer = QMessageBox.StandardButton.No
+    row.cancel.click()  # asks first; "No" leaves the copy running
+    assert boxes.shown[-1][0] == "question" and "Stop copying" in boxes.last()
+    assert cancelled == []
+    boxes.answer = QMessageBox.StandardButton.Yes
+    monkeypatch.setattr(rig.controller, "cancel", real_cancel)
+    row.cancel.click()
     gate.set()
     qtbot.waitUntil(lambda: not rig.controller.busy(), timeout=15000)
     page.refresh()

@@ -47,6 +47,7 @@ class CopyRow(QFrame):
         super().__init__(parent)
         self.setObjectName("card")
         self.ctx, self.request_id = ctx, item.request_id
+        self._name = item.label
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(10)
@@ -92,8 +93,10 @@ class CopyRow(QFrame):
         answer = QMessageBox.question(
             self,
             "Cancel copy",
-            "Stop this copy? Files already verified are kept and the copy can be retried later; "
-            "nothing is deleted from the source.",
+            f"Stop copying {self._name}?\n\nFiles already verified are kept and the copy can be "
+            "retried later; nothing is deleted from the source.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,  # Enter must never cancel a copy by accident
         )
         if answer == QMessageBox.StandardButton.Yes:
             self.ctx.controller.cancel(self.request_id)
