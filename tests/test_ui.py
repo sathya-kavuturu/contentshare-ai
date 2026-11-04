@@ -532,7 +532,14 @@ def test_history_shows_the_copy_time_of_each_request(rig: Rig, qtbot: Any) -> No
     card = rig.cards()[0]
     card.confirm.setChecked(True)
     rig.click(card, "Approve and copy")
-    qtbot.waitUntil(lambda: rig.controller.views()[0].state == "VERIFIED", timeout=20000)
+    # the request turns VERIFIED a moment before the job's finish time is written
+    qtbot.waitUntil(
+        lambda: (
+            rig.controller.views()[0].state == "VERIFIED"
+            and rig.controller.views()[0].copy_seconds is not None
+        ),
+        timeout=20000,
+    )
     page.refresh()
     assert page.table.item(0, column).text().endswith(" s")
     page.table.selectRow(0)
