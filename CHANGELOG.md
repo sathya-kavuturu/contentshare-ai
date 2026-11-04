@@ -6,6 +6,10 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **History shows who approved each request.** When ContentShare opens it asks *Who is using
+  ContentShare?* (the last name is filled in). A new *Approved by* column (also in the CSV, and
+  in the step-by-step record) shows that name beside what the person approved. The name button
+  in the menu changes it later. Requests approved before this version show a dash.
 - **Telegram alerts.** Optionally, ContentShare posts a short message to a Telegram group when a
   check finds new requests ("3 new requests waiting for approval (2 ready, 1 need a look)"). Set
   it up in Settings → General → Telegram: paste the bot token, press **Find my group**, then

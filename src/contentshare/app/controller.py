@@ -62,12 +62,20 @@ log = logging.getLogger(__name__)
 COPY_OK = "Copied and verified"  # the message of a successful ``copy_finished`` event
 
 S = RequestState
+
+
+def clean_user_name(text: str) -> str:
+    """The name typed when the app is opened: one line, no control characters, at most 40."""
+    return " ".join("".join(c for c in text if c.isprintable()).split())[:40]
+
+
 GatewayFactory = Callable[[], GmailGateway]
 MANUAL_RESULTS = 20
 UI_OPTIONS = (
     "appearance",
     "sidebar_collapsed",
     "compact_requests",
+    "user_name",
 )  # saved at once, see set_ui_option
 
 
@@ -141,6 +149,7 @@ class RequestView:
     gmail_thread_id: str
     gmail_message_id: str
     copy_seconds: float | None = None  # how long the last copy of it took, if one finished
+    approved_by: str = ""  # the Windows user who approved it ("" until someone does)
 
     @property
     def copy_time_text(self) -> str:
@@ -272,6 +281,7 @@ def make_view(row: dict[str, Any]) -> RequestView:
         gmail_thread_id=str(row.get("gmail_thread_id") or ""),
         gmail_message_id=str(row.get("gmail_message_id") or ""),
         copy_seconds=_seconds(row.get("copy_seconds")),
+        approved_by=str(row.get("approved_by") or ""),
     )
 
 
@@ -307,6 +317,7 @@ _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 HISTORY_COLUMNS = [
     "request", "received", "from", "department", "subject", "requested", "state", "source",
     "destination", "files", "bytes", "copy_seconds", "sender_check", "failure",
+    "approved_by",
 ]  # fmt: skip
 
 
@@ -423,7 +434,7 @@ class Controller:
 
     def _transition(self, request_id: int, target: RequestState, **kwargs: Any) -> None:
         try:
-            self.repo.transition(request_id, target, actor="user", **kwargs)
+            self.repo.transition(request_id, target, actor=self.user_name, **kwargs)
         except InvalidTransitionError as exc:
             raise ActionError(str(exc)) from exc
         except PermissionError as exc:
@@ -622,7 +633,7 @@ class Controller:
             self._transition(request_id, S.READY, reason="content chosen by the user", **fields)
         else:
             self.repo.update_request(
-                request_id, actor="user", reason="content changed by the user", **fields
+                request_id, actor=self.user_name, reason="content changed by the user", **fields
             )
         self._emit("changed", request_id)
 
@@ -638,15 +649,17 @@ class Controller:
                 f"The destination must be inside {dept.destination_root}: {exc}"
             ) from exc
         self.repo.update_request(
-            request_id, actor="user", reason="destination edited", destination_path=str(resolved)
-        )
+            request_id, actor=self.user_name, reason="destination edited",
+            destination_path=str(resolved),
+        )  # fmt: skip
         self._emit("changed", request_id)
 
     def set_auto_reply(self, request_id: int, enabled: bool) -> None:
         try:
             self.repo.update_request(
-                request_id, actor="user", reason="auto-reply toggled", auto_reply=int(enabled)
-            )
+                request_id, actor=self.user_name, reason="auto-reply toggled",
+                auto_reply=int(enabled),
+            )  # fmt: skip
         except InvalidTransitionError as exc:
             raise ActionError("This request is finished and cannot be changed") from exc
 
@@ -785,7 +798,9 @@ class Controller:
             preflight(plan, options_from_config(self.config), create_dirs=False)
         except PreflightError as exc:
             problems = tuple(exc.problems)
-        self.repo.log("user", "dry_run", request_id, files=len(plan.files), problems=len(problems))
+        self.repo.log(
+            self.user_name, "dry_run", request_id, files=len(plan.files), problems=len(problems)
+        )
         return ApproveResult(
             started=False, dry_run=True, files=len(plan.files), total_bytes=plan.total_bytes,
             problems=problems, note=note,
@@ -989,7 +1004,7 @@ class Controller:
         if self.config.dry_run:
             raise ActionError("Dry-run mode is on: no email is sent. Turn it off to reply.")
         try:
-            result = self._replies().send(draft)
+            result = self._replies().send(draft, actor=self.user_name)
         except ReplyError as exc:
             raise ActionError(str(exc)) from exc
         self._after_reply(draft.request_id, result)
@@ -1069,6 +1084,20 @@ class Controller:
         save_config(config, self._config_path)
         self.config = config
 
+    @property
+    def user_name(self) -> str:
+        """Who is using the app now: the name typed when it was opened. It goes in the History
+        beside what that person approves. "user" until a name has been given."""
+        return self.config.user_name or "user"
+
+    def set_user_name(self, name: str) -> str:
+        """Remember who is using the app. Returns the name as stored."""
+        cleaned = clean_user_name(name)
+        if not cleaned:
+            raise ActionError("Type your name")
+        self.set_ui_option("user_name", cleaned)
+        return cleaned
+
     def set_appearance(self, appearance: str) -> None:
         self.set_ui_option("appearance", appearance)
 
@@ -1108,7 +1137,7 @@ class Controller:
                         v.file_count if v.file_count is not None else "",
                         v.total_bytes if v.total_bytes is not None else "",
                         f"{v.copy_seconds:.1f}" if v.copy_seconds is not None else "",
-                        v.auth_status, csv_safe(v.failure_reason),
+                        v.auth_status, csv_safe(v.failure_reason), csv_safe(v.approved_by),
                     ]
                 )  # fmt: skip
         return len(rows)

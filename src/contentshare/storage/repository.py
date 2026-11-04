@@ -44,7 +44,11 @@ _REQUEST_SELECT = (
     # how long the last finished copy of this request took, in seconds
     "(SELECT (julianday(j.finished_at) - julianday(j.started_at)) * 86400.0 FROM jobs j "
     "WHERE j.request_id = r.id AND j.finished_at IS NOT NULL ORDER BY j.id DESC LIMIT 1) "
-    "AS copy_seconds "
+    "AS copy_seconds, "
+    # who approved it: the person named in the last approval (or dry-run check) of the request
+    "(SELECT a.actor FROM audit_log a WHERE a.request_id = r.id AND ("
+    "(a.event = 'state_changed' AND json_extract(a.detail, '$.to') = 'APPROVED') "
+    "OR a.event = 'dry_run') ORDER BY a.id DESC LIMIT 1) AS approved_by "
     "FROM requests r JOIN emails e ON e.id = r.email_id"
 )
 

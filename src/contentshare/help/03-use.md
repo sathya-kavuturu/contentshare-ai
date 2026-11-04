@@ -71,6 +71,11 @@ dry-run mode nothing is sent.
 
 Every request with a step-by-step record of what happened. **Export CSV** saves it for Excel.
 
+When ContentShare opens it asks **Who is using ContentShare?** Type your name (the last name used is
+already filled in). The **Approved by** column shows that name beside each request you approve, so a team
+sharing the app can see who did what. The step-by-step record names the same person for every action they
+took. To change the name later, click the name button in the menu on the left. Older requests show a dash.
+
 The **Copy time** column shows how long the last copy of each request took, from the first file to the last
 check (for example `2 min 05 s`). Select a request to also see its average speed. That speed counts the
 whole job, which includes reading every file back to check it, so it is lower than a plain copy would show.

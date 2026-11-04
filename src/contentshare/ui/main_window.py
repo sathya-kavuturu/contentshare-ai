@@ -5,9 +5,10 @@ from __future__ import annotations
 import contextlib
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QShowEvent
 from PySide6.QtWidgets import (
     QApplication,
+    QDialog,
     QFrame,
     QHBoxLayout,
     QListWidgetItem,
@@ -18,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from contentshare.app.controller import Controller, Event
+from contentshare.app.controller import ActionError, Controller, Event
 from contentshare.app.notifications import Toast, for_check, for_event
 from contentshare.app.scheduler import Due
 from contentshare.app.startup import StartAtLogin
@@ -28,6 +29,7 @@ from contentshare.ui.automation import Automation
 from contentshare.ui.bridge import Bridge
 from contentshare.ui.context import UiContext
 from contentshare.ui.copies_page import CopiesPage
+from contentshare.ui.dialogs import UserNameDialog
 from contentshare.ui.help_page import HelpPage
 from contentshare.ui.history_page import HistoryPage
 from contentshare.ui.icons import app_icon
@@ -79,9 +81,11 @@ class MainWindow(QMainWindow):
         automation: Automation | None = None,
         startup: StartAtLogin | None = None,
         updater: Updater | None = None,
+        ask_name: bool = False,
     ) -> None:
         super().__init__()
         self.controller, self.bridge = controller, bridge
+        self._ask_name_on_open = ask_name  # the real app asks who is using it; tests do not
         self.tray, self.automation = tray, automation
         self._quitting = False
         self._told_about_tray = False
@@ -150,6 +154,14 @@ class MainWindow(QMainWindow):
         for name in PAGES:
             self.nav.addItem(QListWidgetItem(name))
         side_layout.addWidget(self.nav, 1)
+        # who is using the app (click to change it): shown in the History beside approvals
+        self.user_button = QPushButton()
+        self.user_button.setFlat(True)
+        self.user_button.clicked.connect(lambda _c=False: self.ask_user_name())
+        user_row = QHBoxLayout()
+        user_row.setContentsMargins(12, 0, 12, 0)
+        user_row.addWidget(self.user_button)
+        side_layout.addLayout(user_row)
         self.side_toggle = QPushButton()
         self.side_toggle.setFlat(True)
         self.side_toggle.clicked.connect(lambda _c=False: self.toggle_sidebar())
@@ -187,11 +199,39 @@ class MainWindow(QMainWindow):
             "Show the menu names" if collapsed else "Fold the menu to icons"
         )
         self.side_toggle.setAccessibleName("Show the menu" if collapsed else "Fold the menu")
+        self.refresh_user_button()
         self.top_toggle.setToolTip(self.side_toggle.toolTip())
         self.top_toggle.setAccessibleName(self.side_toggle.accessibleName())
         if remember:
             with contextlib.suppress(OSError, ValueError):  # only "remember it" can fail
                 self.controller.set_ui_option("sidebar_collapsed", collapsed)
+
+    # ------------------------------------------------------------------ who is using the app
+    def refresh_user_button(self) -> None:
+        name = self.controller.config.user_name
+        self.user_button.setText(
+            "👤" if self._sidebar_collapsed else f"👤  {name or 'Who are you?'}"
+        )
+        tip = f"Using ContentShare as {name}. Click to change." if name else "Type your name"
+        self.user_button.setToolTip(tip)
+        self.user_button.setAccessibleName(f"User: {name or 'not set'}. Change")
+
+    def ask_user_name(self) -> bool:
+        """Ask who is using the app. True when a name is now saved."""
+        dialog = UserNameDialog(self.controller.config.user_name, self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            try:
+                self.controller.set_user_name(dialog.value())
+            except (ActionError, OSError, ValueError) as exc:
+                QMessageBox.warning(self, "Could not save the name", str(exc))
+        self.refresh_user_button()
+        return bool(self.controller.config.user_name)
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 (Qt name)
+        super().showEvent(event)
+        if self._ask_name_on_open:
+            self._ask_name_on_open = False  # once per start, when the window first appears
+            QTimer.singleShot(0, self.ask_user_name)
 
     def _add_update_card(self, layout: QVBoxLayout, updater: Updater | None) -> UpdateCard | None:
         if updater is None:

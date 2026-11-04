@@ -341,3 +341,48 @@ class RejectDialog(QDialog):
 
     def result_values(self) -> tuple[str, bool, str]:
         return self.reason.text().strip(), self.notify.isChecked(), self.text.toPlainText().strip()
+
+
+class UserNameDialog(QDialog):
+    """Asked when the app is opened: who is using it. The name is kept in the History beside
+    what this person approves. It cannot be left empty."""
+
+    def __init__(self, current: str = "", parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("Who is using ContentShare?")
+        self.resize(460, 190)
+        self._had_name = bool(current)
+        layout = QVBoxLayout(self)
+        layout.addWidget(
+            QLabel(
+                "Type your name. The History shows it beside every request you approve, "
+                "so the team can see who did what."
+            )
+        )
+        self.name = QLineEdit(current, placeholderText="Your name")
+        self.name.setAccessibleName("Your name")
+        self.name.setMaxLength(40)
+        layout.addWidget(self.name)
+        self._box = _buttons(self, "Continue")
+        self._ok = self._box.buttons()[0]
+        self._keep = self._box.buttons()[1]
+        self._keep.setVisible(self._had_name)
+        layout.addWidget(self._box)
+        self.name.textChanged.connect(self._check)
+        self.name.returnPressed.connect(self.accept)
+        self._check()
+
+    def _check(self) -> None:
+        self._ok.setEnabled(bool(self.name.text().strip()))
+
+    def value(self) -> str:
+        return self.name.text().strip()
+
+    def reject(self) -> None:
+        """Escape or the close button: fine when a name is already saved, ignored otherwise."""
+        if self._had_name:
+            super().reject()
+
+    def accept(self) -> None:
+        if self.value():
+            super().accept()

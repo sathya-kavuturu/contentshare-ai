@@ -135,7 +135,11 @@ person who asked, in their thread.
 
 Every request, newest first. Click one to see a step-by-step record of what happened. Use the
 search box and the status filter to find a request. **Export CSV** saves the list for Excel. The
-**Copy time** column shows how long each copy took.
+**Approved by** column shows the name of the person who approved it (a dash for older requests),
+and **Copy time** shows how long each copy took.
+
+ContentShare asks **Who is using ContentShare?** every time it opens. Type your name; the last one
+is already filled in. To change it later, click the name button in the menu on the left.
 
 ## 8. Settings
 

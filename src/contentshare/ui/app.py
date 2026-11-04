@@ -176,8 +176,9 @@ def _run(app: QApplication, instance: SingleInstance, *, background: bool) -> in
     startup = StartAtLogin()
     updater = Updater(__version__, data_dir() / "updates")
     window = MainWindow(
-        controller, bridge, tray=tray, automation=automation, startup=startup, updater=updater
-    )
+        controller, bridge, tray=tray, automation=automation, startup=startup, updater=updater,
+        ask_name=True,
+    )  # fmt: skip
     instance.show_requested.connect(window.show_window)
     instance.quit_requested.connect(window.quit_app)
     app.aboutToQuit.connect(window.cleanup)  # also runs when Windows signs the user out

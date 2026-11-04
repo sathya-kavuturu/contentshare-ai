@@ -1013,3 +1013,88 @@ def test_startup_helpers(isolated_home: Path, qtbot: Any) -> None:
         if getattr(handler, "baseFilename", "").endswith("contentshare.log"):
             root.removeHandler(handler)
             handler.close()
+
+
+# --------------------------------------------------------------------------- who is using the app
+def test_the_name_dialog_needs_a_name(qtbot: Any) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    from contentshare.ui.dialogs import UserNameDialog
+
+    first = UserNameDialog("")
+    qtbot.addWidget(first)
+    assert not first._ok.isEnabled()
+    closed: list[str] = []
+    first.rejected.connect(lambda: closed.append("closed"))
+    first.reject()  # no name saved yet: the close button and Escape do nothing
+    assert closed == []
+    first.name.setText("  Asha  ")
+    assert first._ok.isEnabled() and first.value() == "Asha"
+    first.accept()
+    assert first.result() == QDialog.DialogCode.Accepted
+
+    again = UserNameDialog("Asha")
+    qtbot.addWidget(again)
+    assert again._ok.isEnabled() and again.name.text() == "Asha"
+    again.rejected.connect(lambda: closed.append("closed"))
+    again.reject()
+    assert closed == ["closed"]  # Cancel keeps the saved name
+
+
+def test_the_app_asks_who_is_using_it_when_it_opens(
+    qtbot: Any, tmp_path: Path, db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    from contentshare.ui.dialogs import UserNameDialog
+
+    asked: list[str] = []
+
+    def answer(self: UserNameDialog) -> QDialog.DialogCode:
+        asked.append(self.name.text())
+        self.name.setText("Asha Rao")
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(UserNameDialog, "exec", answer)
+    world = build_mail_world(tmp_path, db)
+    bridge = Bridge()
+    controller = Controller(
+        world.repo, world.index, world.config, gateway_factory=lambda: world.gateway,
+        config_path=tmp_path / "config.yaml", today=lambda: TODAY,
+    )  # fmt: skip
+    window = MainWindow(controller, bridge, ask_name=True)
+    qtbot.addWidget(window)
+    assert not asked  # nothing before the window is shown
+    window.show()
+    qtbot.waitUntil(lambda: bool(asked))
+    assert asked == [""]
+    assert controller.user_name == "Asha Rao"
+    assert "Asha Rao" in window.user_button.text()
+    window.hide()
+    window.show()  # only once per start
+    qtbot.wait(50)
+    assert len(asked) == 1
+    asked.clear()
+    window.user_button.click()  # the button in the menu changes it later
+    assert asked == ["Asha Rao"]
+    controller.shutdown()
+    bridge.close()
+
+
+def test_history_shows_the_typed_name_not_the_windows_one(rig: Rig) -> None:
+    rig.controller.set_user_name("Meera")
+    rig.window.refresh_user_button()
+    assert "Meera" in rig.window.user_button.text()
+    rig.controller.set_dry_run(True)  # checks only, so no copy is left running
+    rig.ready_mail()
+    view = rig.controller.views()[0]
+    rig.controller.approve(view.id, confirmed=True)
+    rig.window.history.refresh()
+    from contentshare.ui.history_page import COLUMNS
+
+    column = COLUMNS.index("Approved by")
+    texts = [
+        rig.window.history.table.item(r, column).text()
+        for r in range(rig.window.history.table.rowCount())
+    ]
+    assert "Meera" in texts

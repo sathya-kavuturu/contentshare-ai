@@ -595,3 +595,42 @@ def test_copy_speed_text_is_the_average_over_the_whole_job(h: Harness) -> None:
     view = RequestView(**{**v.__dict__, "total_bytes": 50 * 1024 * 1024, "copy_seconds": 10.0})
     assert view.copy_speed_text == "5.0 MB/s"
     assert RequestView(**{**v.__dict__, "copy_seconds": 0.0}).copy_speed_text == ""
+
+
+# --------------------------------------------------------------------------- who approved
+def test_history_says_who_approved_the_request(h: Harness, tmp_path: Path) -> None:
+    h.ctl.set_user_name("asha")
+    v = h.ready()
+    assert v.approved_by == ""
+    h.ctl.approve(v.id, confirmed=True)
+    h.wait_copy(v.id)
+    assert h.ctl.view(v.id).approved_by == "asha"
+    out = tmp_path / "history.csv"
+    h.ctl.export_history(out)
+    with out.open(encoding="utf-8-sig", newline="") as fh:
+        rows = {int(r["request"]): r for r in csv.DictReader(fh)}
+    assert rows[v.id]["approved_by"] == "asha"
+    who = {e["actor"] for e in h.ctl.audit(v.id) if e["event"] == "state_changed"}
+    assert "asha" in who and "system" in who
+
+
+def test_a_dry_run_check_is_also_attributed(h: Harness) -> None:
+    h.ctl.set_user_name("ravi")
+    h.ctl.apply_config(h.ctl.config.model_copy(update={"dry_run": True}))
+    v = h.ready()
+    h.ctl.approve(v.id, confirmed=True)
+    assert h.ctl.view(v.id).approved_by == "ravi"
+
+
+def test_the_name_typed_at_start_is_cleaned_and_remembered(h: Harness) -> None:
+    from contentshare.app.controller import ActionError, clean_user_name
+
+    assert h.ctl.user_name == "user"  # nobody has typed a name yet
+    assert clean_user_name("  Asha " + chr(9) + "  Rao" + chr(10)) == "Asha Rao"
+    assert clean_user_name("x" * 100) == "x" * 40
+    with pytest.raises(ActionError):
+        h.ctl.set_user_name("   ")
+    assert h.ctl.set_user_name("  Meera  K ") == "Meera K"
+    assert h.ctl.user_name == "Meera K"
+    reloaded = load_config(h.ctl._config_path)  # type: ignore[arg-type]
+    assert reloaded.user_name == "Meera K"

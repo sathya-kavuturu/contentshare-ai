@@ -31,7 +31,8 @@ from contentshare.ui.widgets import Combo, page_header
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
 COLUMNS = [
-    "#", "Received", "From", "Department", "Requested", "Status", "Files", "Size", "Copy time",
+    "#", "Received", "From", "Department", "Requested", "Status", "Approved by", "Files", "Size",
+    "Copy time",
 ]  # fmt: skip
 STATUS_COLUMN = COLUMNS.index("Status")
 
@@ -57,7 +58,7 @@ def audit_text(entries: list[dict[str, object]]) -> str:
         reason = detail.get("reason") if isinstance(detail, dict) else None
         to = f" → {detail['to']}" if isinstance(detail, dict) and detail.get("to") else ""
         lines.append(
-            f"{local_stamp(entry['ts'], seconds=True)}  {entry['actor']:<7} {entry['event']}"
+            f"{local_stamp(entry['ts'], seconds=True)}  {entry['actor']!s:<10} {entry['event']}"
             f"{to}{(' · ' + str(reason)) if reason else ''}"
         )
     return "\n".join(lines)
@@ -148,7 +149,7 @@ class HistoryPage(QWidget):
             cells = [
                 str(v.id), local_stamp(v.received_at),
                 f"{v.sender_name or v.sender_email}", v.department or "—", v.requested,
-                style_for(v.state).text,
+                style_for(v.state).text, v.approved_by or "—",
                 str(v.file_count) if v.file_count is not None else "",
                 v.size_text, v.copy_time_text,
             ]  # fmt: skip
@@ -182,6 +183,8 @@ class HistoryPage(QWidget):
             f"Source: {view.source_path or '—'}",
             f"Destination: {view.destination_path or '—'}",
         ]
+        if view.approved_by:
+            parts.append(f"Approved by: {view.approved_by}")
         if view.copy_seconds is not None:
             speed = f" · {view.copy_speed_text} on average" if view.copy_speed_text else ""
             parts.append(f"Copy time: {view.copy_time_text}{speed}")

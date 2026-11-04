@@ -349,6 +349,7 @@ class AppConfig(BaseModel):
     gmail: GmailSettings = Field(default_factory=GmailSettings)
     appearance: Literal["system", "light", "dark"] = "system"  # follow Windows, or force one
     # Window layout the person chose (remembered, never needed for anything to work)
+    user_name: str = ""  # who is using the app (asked when it opens); shown in the History
     sidebar_collapsed: bool = False  # the menu on the left folded to icons
     compact_requests: bool = False  # request cards folded to one short line
     auto_reply_default: bool = False
