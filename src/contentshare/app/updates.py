@@ -45,6 +45,7 @@ MAX_INSTALLER_BYTES = 400 * 1024 * 1024  # the real one is about 40 MB
 MAX_JSON_BYTES = 2 * 1024 * 1024
 TIMEOUT_SECONDS = 20
 CHUNK = 256 * 1024
+DOWNLOAD_CHUNK = 32 * 1024  # small, so the progress bar moves even on a slow connection
 
 Version = tuple[int, int, int]
 
@@ -98,11 +99,11 @@ class UrlLibHttp:
     def __init__(self) -> None:
         self._opener = urllib.request.build_opener(_HttpsOnly)
 
-    def _open(self, url: str) -> IO[bytes]:
+    def _open(self, url: str, accept: str = "application/json") -> IO[bytes]:
         if urlsplit(url).scheme != "https":
             raise UpdateError("Only secure (https) addresses are used for updates.")
         request = urllib.request.Request(  # noqa: S310 - https only, checked just above
-            url, headers={"User-Agent": "ContentShare-updater", "Accept": "application/json"}
+            url, headers={"User-Agent": "ContentShare-updater", "Accept": accept}
         )
         return cast(IO[bytes], self._opener.open(request, timeout=TIMEOUT_SECONDS))  # nosec B310
 
@@ -120,7 +121,7 @@ class UrlLibHttp:
             raise UpdateError("The update information could not be read.") from exc
 
     def open_stream(self, url: str) -> IO[bytes]:
-        return self._open(url)
+        return self._open(url, "application/octet-stream")
 
 
 # --------------------------------------------------------------------------- the updater
@@ -228,6 +229,8 @@ class Updater:
         """Fetch and verify the installer. A copy that is already here and still matches the
         published checksum is reused. Raises ``UpdateError`` or ``UpdateCancelledError``."""
         self.folder.mkdir(parents=True, exist_ok=True)
+        if progress:
+            progress(0, info.size)  # "connecting": the checksum and the connection come first
         expected = self._expected_hash(info)
         final = self.target(info)
         if final.is_file() and hmac.compare_digest(sha256_of(final), expected):
@@ -275,7 +278,7 @@ class Updater:
                 while True:
                     if cancelled():
                         raise UpdateCancelledError
-                    chunk = stream.read(CHUNK)
+                    chunk = stream.read(DOWNLOAD_CHUNK)
                     if not chunk:
                         break
                     received += len(chunk)

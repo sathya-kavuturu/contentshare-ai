@@ -56,6 +56,11 @@ uses [semantic versioning](https://semver.org/).
 - Settings and Help are laid out in the background shortly after start, so they open at once.
 
 ### Fixed
+- **The update download looked stuck at 0%.** The checksum file, the connection and the first
+  block all came before any progress was shown, which on a slow connection meant a long silent
+  wait. The box now says "Connecting to the update server…" with a moving bar, then shows real
+  progress (to a tenth of a megabyte) in small steps. The installer is also requested as a
+  binary download rather than as JSON.
 - **One email could create two requests** when the same day was written with and without a year
   (for example "12 Oct" in the subject and "12 October 2025" in the message). The day is now
   counted once, using the year that was written.

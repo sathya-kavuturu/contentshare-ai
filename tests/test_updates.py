@@ -18,6 +18,7 @@ import pytest
 from PySide6.QtWidgets import QApplication
 
 from contentshare.app.updates import (
+    DOWNLOAD_CHUNK,
     DOWNLOAD_PREFIX,
     LATEST_RELEASE_URL,
     MAX_INSTALLER_BYTES,
@@ -194,6 +195,27 @@ def test_download_verifies_and_keeps_the_installer(
     assert path.read_bytes() == PAYLOAD
     assert seen[-1] == (len(PAYLOAD), len(PAYLOAD)) and seen == sorted(seen)
     assert [p.name for p in path.parent.iterdir()] == [info.installer_name]  # no .part left
+
+
+def test_progress_starts_at_once_and_moves_in_small_steps(updater: Updater, http: FakeHttp) -> None:
+    big = b"x" * (DOWNLOAD_CHUNK * 5 + 123)
+    publish(http, "0.2.0", big)
+    info = updater.check()
+    assert info
+    seen: list[tuple[int, int]] = []
+    updater.download(info, lambda got, total: seen.append((got, total)))
+    # "connecting" is reported before the checksum and the connection, then every small block
+    assert seen[0] == (0, len(big))
+    assert len(seen) == 1 + 6 and seen[-1] == (len(big), len(big))
+    assert seen == sorted(seen)
+
+
+def test_the_installer_is_requested_as_a_binary_download(monkeypatch: pytest.MonkeyPatch) -> None:
+    asked: list[str] = []
+    http = UrlLibHttp()
+    monkeypatch.setattr(http, "_open", lambda url, accept="application/json": asked.append(accept))
+    http.open_stream("https://github.com/x")
+    assert asked == ["application/octet-stream"]
 
 
 def test_a_checksum_mismatch_deletes_the_download(
@@ -480,6 +502,23 @@ def test_progress_is_shown_while_downloading(qtbot: Any, rig: Rig, http: FakeHtt
     rig.card._on_progress(len(PAYLOAD) // 2, len(PAYLOAD))
     assert rig.card.bar.value() == 50 and " of " in rig.card.detail.text()
     assert not rig.card.bar.isHidden()
+
+
+def test_the_box_says_it_is_connecting_until_the_first_bytes_arrive(
+    qtbot: Any, rig: Rig, http: FakeHttp
+) -> None:
+    publish(http, "0.2.0")
+    rig.card.check()
+    qtbot.waitUntil(lambda: rig.card.state is State.AVAILABLE)
+    rig.card._show(State.DOWNLOADING)
+    # no percentage yet: a moving bar and a line saying what is happening, not a stuck 0%
+    assert (rig.card.bar.minimum(), rig.card.bar.maximum()) == (0, 0)
+    assert "Connecting" in rig.card.detail.text()
+    rig.card._on_progress(0, len(PAYLOAD))
+    assert rig.card.bar.maximum() == 0
+    rig.card._on_progress(len(PAYLOAD) // 4, len(PAYLOAD))
+    assert (rig.card.bar.minimum(), rig.card.bar.maximum()) == (0, 100)
+    assert rig.card.bar.value() == 25 and "Connecting" not in rig.card.detail.text()
 
 
 def test_automatic_checks_stay_quiet_but_manual_ones_answer(

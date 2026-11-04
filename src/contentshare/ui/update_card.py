@@ -36,8 +36,8 @@ class State(Enum):
     MESSAGE = "message"
 
 
-def megabytes(size: int) -> str:
-    return f"{size / (1024 * 1024):.0f} MB"
+def megabytes(size: int, digits: int = 0) -> str:
+    return f"{size / (1024 * 1024):.{digits}f} MB"
 
 
 class UpdateCard(QFrame):
@@ -185,9 +185,16 @@ class UpdateCard(QFrame):
     def _on_progress(self, received: int, total: int) -> None:
         if self.state is not State.DOWNLOADING:
             return
-        percent = min(100, int(received * 100 / total)) if total else 0
-        self.bar.setValue(percent)
-        self.detail.setText(f"{megabytes(received)} of {megabytes(total)}")
+        if received <= 0:
+            self._connecting()  # the checksum and the connection come before the first byte
+            return
+        self.bar.setRange(0, 100)
+        self.bar.setValue(min(100, int(received * 100 / total)) if total else 0)
+        self.detail.setText(f"{megabytes(received, 1)} of {megabytes(total, 1)}")
+
+    def _connecting(self) -> None:
+        self.bar.setRange(0, 0)  # a moving bar: it is working, there is just no percentage yet
+        self.detail.setText("Connecting to the update server…")
 
     def _current(self) -> str:
         return ".".join(str(n) for n in self.updater.current)
@@ -215,8 +222,7 @@ class UpdateCard(QFrame):
                 )
             elif state is State.DOWNLOADING:
                 self.title.setText(f"Downloading version {version}…")
-                self.detail.setText("")
-                self.bar.setValue(0)
+                self._connecting()
             elif state is State.READY:
                 self.title.setText(f"Version {version} is ready to install")
                 self.detail.setText("It was checked against the published checksum.")
