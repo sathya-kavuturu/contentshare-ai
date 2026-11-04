@@ -52,7 +52,7 @@ class UpdateCard(QFrame):
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setObjectName("card")
+        self.setObjectName("updatecard")
         self.updater, self.bridge, self._busy = updater, bridge, busy
         self.state = State.HIDDEN
         self.info: UpdateInfo | None = None
@@ -61,14 +61,14 @@ class UpdateCard(QFrame):
         self._cancel = threading.Event()
 
         self.title = QLabel("")
-        self.title.setStyleSheet("font-weight: 600;")
+        self.title.setProperty("role", "heading")
         self.title.setWordWrap(True)
         self.detail = QLabel("")
         self.detail.setWordWrap(True)
         self.detail.setProperty("role", "muted")
         self.bar = QProgressBar()
         self.bar.setRange(0, 100)
-        self.bar.setTextVisible(True)
+        self.bar.setTextVisible(False)  # the box is narrow; the size line says how far it is
         self.primary = QPushButton("")
         self.primary.setProperty("primary", True)
         self.secondary = QPushButton("")
@@ -81,7 +81,7 @@ class UpdateCard(QFrame):
         buttons.addWidget(self.secondary)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(12, 10, 12, 10)
+        layout.setContentsMargins(14, 12, 14, 12)
         layout.setSpacing(6)
         layout.addWidget(self.title)
         layout.addWidget(self.detail)

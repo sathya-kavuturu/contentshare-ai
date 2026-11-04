@@ -22,6 +22,14 @@ uses [semantic versioning](https://semver.org/).
 - **Appearance** in Settings → General: *Same as Windows*, *Light* or *Dark*, applied at once.
 
 ### Changed
+- **A new look**, built from the Linear design analysis in the `awesome-design-md` collection, in
+  both light and dark: a near-black canvas with charcoal panels and hairline borders (soft grey and
+  white in light), one lavender accent for the main action, the selection and the focus ring, and
+  a quieter sidebar with icons and a count pill. Request cards are denser and easier to scan (title,
+  sender line, status chip, then the matches), long paths are shortened in the middle instead of
+  stretching the window, tables have roomy rows and coloured status words, Settings is grouped
+  into sections, and the Help text, the first-run setup and the update box follow the same style.
+  Every colour pair is checked for contrast by a test.
 - **No checksum file is left in the copied folder any more.** Every file is still checked against
   the original while it is copied; the extra `<folder>.checksums.xxhash` file is now optional
   (Settings → Matching and copying → *Keep a checksum file in each copied folder*, off by default).

@@ -5,7 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QBrush, QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
 
-BLUE = QColor("#2563eb")
+BLUE = QColor("#5e6ad2")
 WHITE = QColor("#ffffff")
 AMBER = QColor("#f59e0b")
 

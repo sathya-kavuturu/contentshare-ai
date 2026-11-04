@@ -22,12 +22,23 @@ from contentshare.ui.pickers import choose_folder
 from contentshare.ui.settings_page import explain_validation, lines
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
+from contentshare.ui.widgets import page_header
 
 
 def _note(text: str) -> QLabel:
     label = QLabel(text)
     label.setWordWrap(True)
     return label
+
+
+def _page(title: str, subtitle: str = "") -> tuple[QWizardPage, QVBoxLayout]:
+    """A page with a big heading of our own (the wizard's small built-in header is not used)."""
+    page = QWizardPage()
+    layout = QVBoxLayout(page)
+    layout.setContentsMargins(28, 24, 28, 12)
+    layout.setSpacing(14)
+    layout.addLayout(page_header(title, subtitle))
+    return page, layout
 
 
 class FirstRunWizard(QWizard):
@@ -38,7 +49,7 @@ class FirstRunWizard(QWizard):
         self.setWindowTitle("Welcome to ContentShare")
         self.setWizardStyle(QWizard.WizardStyle.ModernStyle)
         self.setOption(QWizard.WizardOption.NoBackButtonOnStartPage)  # nothing to go back to
-        self.resize(680, 520)
+        self.resize(740, 600)
         self._base = base
         self.result_config: AppConfig | None = None
 
@@ -51,9 +62,7 @@ class FirstRunWizard(QWizard):
 
     # ------------------------------------------------------------------ pages
     def _welcome(self) -> QWizardPage:
-        page = QWizardPage()
-        page.setTitle("What ContentShare does")
-        layout = QVBoxLayout(page)
+        page, layout = _page("Welcome to ContentShare", "Here is what it does, in one minute.")
         layout.addWidget(
             _note(
                 "ContentShare reads request emails from the departments you list, finds the "
@@ -67,9 +76,7 @@ class FirstRunWizard(QWizard):
         return page
 
     def _storage(self) -> QWizardPage:
-        page = QWizardPage()
-        page.setTitle("Where is the program content?")
-        layout = QVBoxLayout(page)
+        page, layout = _page("Where is the program content?", "Step 1 of 2")
         layout.addWidget(
             _note(
                 "Add the folder (or folders) on the storage server that hold the programs. "
@@ -87,9 +94,12 @@ class FirstRunWizard(QWizard):
         return page
 
     def _department(self) -> QWizardPage:
-        page = QWizardPage()
-        page.setTitle("Your first department")
-        form = QFormLayout(page)
+        page, layout = _page("Your first department", "Step 2 of 2")
+        form = QFormLayout()
+        form.setHorizontalSpacing(24)
+        form.setVerticalSpacing(12)
+        layout.addLayout(form)
+        layout.addStretch(1)
         form.addRow(
             _note(
                 "Only emails from these senders are ever read. Add more departments later "
@@ -118,9 +128,7 @@ class FirstRunWizard(QWizard):
         return page
 
     def _finish(self) -> QWizardPage:
-        page = QWizardPage()
-        page.setTitle("Ready")
-        layout = QVBoxLayout(page)
+        page, layout = _page("You are ready", "Start safe, then switch to real copying.")
         layout.addWidget(
             _note(
                 "Next: Settings → Gmail to connect your mailbox (Help → Connect Gmail explains "

@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from pydantic import ValidationError
-from PySide6.QtCore import QTime, Signal
+from PySide6.QtCore import Qt, QTime, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -14,10 +14,13 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QFormLayout,
+    QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -36,6 +39,7 @@ from contentshare.ui.pickers import choose_file, choose_folder
 from contentshare.ui.timefmt import local_stamp
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
+from contentshare.ui.widgets import page_header
 
 log = logging.getLogger(__name__)
 
@@ -137,10 +141,11 @@ class SettingsPage(QWidget):
         self.ctx = ctx
         self.departments: list[Department] = []
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 16, 20, 12)
-        title = QLabel("Settings")
-        title.setProperty("role", "title")
-        root.addWidget(title)
+        root.setContentsMargins(32, 28, 26, 16)
+        root.setSpacing(14)
+        root.addLayout(
+            page_header("Settings", "Folders, departments, Gmail and how copies are made.")
+        )
         self.tabs = QTabWidget()
         root.addWidget(self.tabs, 1)
         self._build_general()
@@ -166,56 +171,92 @@ class SettingsPage(QWidget):
     def _tab(self, name: str) -> QFormLayout:
         page = QWidget()
         form = QFormLayout(page)
-        self.tabs.addTab(page, name)
+        form.setContentsMargins(4, 20, 14, 24)
+        form.setHorizontalSpacing(32)
+        form.setVerticalSpacing(14)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(page)
+        self.tabs.addTab(scroll, name)
         return form
+
+    @staticmethod
+    def _section(form: QFormLayout, title: str, first: bool = False) -> None:
+        """A small heading that starts a group of rows."""
+        label = QLabel(title.upper())
+        label.setProperty("role", "section")
+        label.setContentsMargins(0, 0 if first else 12, 0, 0)
+        form.addRow(label)
 
     def _build_general(self) -> None:
         form = self._tab("General")
-        self.check_time = QTimeEdit()
-        self.check_time.setDisplayFormat("HH:mm")
-        self.check_time.setAccessibleName("Daily check time")
-        self.missed = QCheckBox(
-            "Check for requests when the app starts if the daily check was missed"
-        )
-        self.auto_default = QCheckBox("Tick “send the reply automatically” on new requests")
-        self.dry_run = QCheckBox(
-            "Dry-run mode: check everything, but copy nothing and send nothing"
-        )
-        self.daily_enabled = QCheckBox("Check for requests every day")
-        self.start_login = QCheckBox("Start ContentShare when I sign in to Windows")
-        self.start_note = QLabel()
-        self.start_note.setWordWrap(True)
-        self.start_note.setProperty("role", "muted")
-        self.to_tray = QCheckBox("Keep running in the tray when the window is closed")
-        self.notify = QCheckBox("Show pop-up notifications (counts only, never email text)")
+        self._section(form, "Appearance", first=True)
         self.appearance = QComboBox()
         self.appearance.setAccessibleName("Appearance")
+        self.appearance.setMaximumWidth(260)
         for value, text in APPEARANCES:
             self.appearance.addItem(text, value)
         self.appearance.activated.connect(
             lambda _i: self.appearance_changed.emit(self._appearance())
         )
-        form.addRow("Appearance", self.appearance)
+        form.addRow("Theme", self.appearance)
+
+        self._section(form, "Daily check")
+        self.daily_enabled = QCheckBox("Check for requests every day")
+        self.check_time = QTimeEdit()
+        self.check_time.setDisplayFormat("HH:mm")
+        self.check_time.setAccessibleName("Daily check time")
+        self.check_time.setMaximumWidth(140)
+        self.missed = QCheckBox(
+            "Check for requests when the app starts if the daily check was missed"
+        )
         form.addRow("", self.daily_enabled)
         form.addRow("Daily check at", self.check_time)
         form.addRow("", self.missed)
-        form.addRow("", self.start_login)
-        form.addRow("", self.start_note)
+
+        self._section(form, "Windows")
+        self.start_login = QCheckBox("Start ContentShare when I sign in to Windows")
+        self.start_note = QLabel()
+        self.start_note.setWordWrap(True)
+        self.start_note.setProperty("role", "small")
+        self.to_tray = QCheckBox("Keep running in the tray when the window is closed")
+        self.notify = QCheckBox("Show pop-up notifications (counts only, never email text)")
+        startup = QWidget()
+        startup_box = QVBoxLayout(startup)
+        startup_box.setContentsMargins(0, 0, 0, 0)
+        startup_box.setSpacing(4)
+        startup_box.addWidget(self.start_login)
+        startup_box.addWidget(self.start_note)
+        form.addRow("", startup)
         form.addRow("", self.to_tray)
         form.addRow("", self.notify)
+
+        self._section(form, "Safety")
+        self.auto_default = QCheckBox("Tick “send the reply automatically” on new requests")
+        self.dry_run = QCheckBox(
+            "Dry-run mode: check everything, but copy nothing and send nothing"
+        )
         form.addRow("", self.auto_default)
         form.addRow("", self.dry_run)
+        self._build_updates_and_content(form)
+
+    def _build_updates_and_content(self, form: QFormLayout) -> None:
+        self._section(form, "Updates")
         self.check_updates = QCheckBox("Check for updates when ContentShare starts")
         self.update_now = QPushButton("Check for updates now")
         self.update_now.clicked.connect(self.update_check_requested.emit)
         version = QLabel(f"You have ContentShare {contentshare.__version__}")
-        version.setProperty("role", "muted")
+        version.setProperty("role", "small")
         updates_row = QHBoxLayout()
         updates_row.addWidget(self.update_now)
         updates_row.addWidget(version, 1)
         form.addRow("", self.check_updates)
         form.addRow("", updates_row)
 
+        self._section(form, "Content")
         self.folders = FolderList(dialog_title="Choose a storage folder")
         self.roots = self.folders.list  # the list itself, for callers that read it directly
         self.folders.setMinimumHeight(150)
@@ -226,7 +267,7 @@ class SettingsPage(QWidget):
         self.default_reply.setAccessibleName("Default reply text")
         form.addRow("Default reply text", self.default_reply)
         hint = QLabel("Placeholders: " + ", ".join(f"{{{p}}}" for p in sorted(REPLY_PLACEHOLDERS)))
-        hint.setProperty("role", "muted")
+        hint.setProperty("role", "small")
         form.addRow("", hint)
 
     def _build_departments(self) -> None:
@@ -241,7 +282,14 @@ class SettingsPage(QWidget):
         self.dept_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.dept_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.dept_table.verticalHeader().setVisible(False)
-        self.dept_table.horizontalHeader().setStretchLastSection(True)
+        self.dept_table.verticalHeader().setDefaultSectionSize(42)
+        self.dept_table.setShowGrid(False)
+        header = self.dept_table.horizontalHeader()
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        header.setHighlightSections(False)
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         self.dept_table.doubleClicked.connect(lambda _i: self._edit_department())
         layout.addWidget(self.dept_table, 1)
         row = QHBoxLayout()
@@ -287,9 +335,11 @@ class SettingsPage(QWidget):
         self.require_auth = QCheckBox("Treat a sender as verified only if Gmail confirms it")
         self.lookback = QSpinBox()
         self.lookback.setRange(1, 365)
+        self.lookback.setMaximumWidth(160)
         self.lookback.setSuffix(" days")
         self.max_messages = QSpinBox()
         self.max_messages.setRange(1, 500)
+        self.max_messages.setMaximumWidth(160)
         form.addRow("", self.label)
         form.addRow("", self.require_auth)
         form.addRow("Look back", self.lookback)
@@ -306,15 +356,20 @@ class SettingsPage(QWidget):
         form = self._tab("Matching and copying")
         self.ready_score = QSpinBox()
         self.ready_score.setRange(50, 100)
+        self.ready_score.setMaximumWidth(160)
         self.gap = QSpinBox()
         self.gap.setRange(0, 50)
+        self.gap.setMaximumWidth(160)
         self.keep_checksums = QCheckBox("Keep a checksum file in each copied folder")
         self.hash = QComboBox()
         self.hash.addItems(HASHES)
+        self.hash.setMaximumWidth(220)
         self.concurrency = QSpinBox()
         self.concurrency.setRange(1, 4)
+        self.concurrency.setMaximumWidth(160)
         self.attempts = QSpinBox()
         self.attempts.setRange(1, 10)
+        self.attempts.setMaximumWidth(160)
         form.addRow("Mark Ready when at least", self.ready_score)
         form.addRow("…and clearly ahead of the next by", self.gap)
         form.addRow("Verification checksum", self.hash)
@@ -357,7 +412,7 @@ class SettingsPage(QWidget):
         self.to_tray.setChecked(c.schedule.close_to_tray)
         self.notify.setChecked(c.schedule.notifications)
         self.start_login.setChecked(c.schedule.start_with_windows)
-        self.start_note.setText(self._startup_text())
+        self._show_startup_note()
         self.auto_default.setChecked(c.auto_reply_default)
         self.dry_run.setChecked(c.dry_run)
         self.check_updates.setChecked(c.updates.check_on_start)
@@ -436,7 +491,7 @@ class SettingsPage(QWidget):
         self.message.setText(f"Settings saved. {problem}".strip())
         self.ctx.say("Settings saved")
         self._refresh_status()
-        self.start_note.setText(self._startup_text())
+        self._show_startup_note()
         self.saved.emit()
         return True
 
@@ -444,6 +499,11 @@ class SettingsPage(QWidget):
         return str(self.appearance.currentData() or "system")
 
     # ------------------------------------------------------------------ start at login
+    def _show_startup_note(self) -> None:
+        text = self._startup_text()
+        self.start_note.setText(text)
+        self.start_note.setVisible(bool(text))
+
     def _startup_text(self) -> str:
         startup = self.ctx.startup
         if startup is None:
@@ -479,8 +539,6 @@ class SettingsPage(QWidget):
             senders = ", ".join([*d.sender_emails, *(f"@{x}" for x in d.sender_domains)])
             for col, text in enumerate([d.name, senders, d.destination_root]):
                 self.dept_table.setItem(row, col, QTableWidgetItem(text))
-        self.dept_table.resizeColumnsToContents()
-        self.dept_table.horizontalHeader().setStretchLastSection(True)
 
     def _add_department(self) -> None:
         dialog = DepartmentDialog(None, self)

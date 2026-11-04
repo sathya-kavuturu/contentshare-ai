@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -25,11 +26,13 @@ from PySide6.QtWidgets import (
 from contentshare.app.controller import Event, RequestView
 from contentshare.ui.context import UiContext
 from contentshare.ui.status import STATUS, style_for
+from contentshare.ui.theme import current_theme
 from contentshare.ui.timefmt import local_stamp
-from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
+from contentshare.ui.widgets import page_header
 
 COLUMNS = ["#", "Received", "From", "Department", "Requested", "Status", "Files", "Size"]
+STATUS_COLUMN = COLUMNS.index("Status")
 
 
 def matches(view: RequestView, text: str) -> bool:
@@ -66,15 +69,15 @@ class HistoryPage(QWidget):
         self.ctx = ctx
         self._views: list[RequestView] = []
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 16, 20, 12)
+        root.setContentsMargins(32, 28, 26, 16)
+        root.setSpacing(14)
 
         head = QHBoxLayout()
-        title = QLabel("History")
-        title.setProperty("role", "title")
-        head.addWidget(title)
+        head.addLayout(page_header("History", "Every request, newest first."))
         head.addStretch(1)
         self.search = QLineEdit(placeholderText="Search sender, subject, folder…")
         self.search.setAccessibleName("Search history")
+        self.search.setMinimumWidth(260)
         self.search.textChanged.connect(lambda _t: self.refresh())
         self.state = QComboBox()
         self.state.setAccessibleName("Status")
@@ -90,18 +93,10 @@ class HistoryPage(QWidget):
         root.addLayout(head)
 
         split = QSplitter(Qt.Orientation.Vertical)
-        self.table = QTableWidget(0, len(COLUMNS))
-        self.table.setHorizontalHeaderLabels(COLUMNS)
-        self.table.setAccessibleName("Request history")
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.table.verticalHeader().setVisible(False)
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
-        self.table.itemSelectionChanged.connect(self._show_detail)
-        split.addWidget(self.table)
+        split.addWidget(self._build_table())
         self.detail = QPlainTextEdit()
         self.detail.setReadOnly(True)
+        self.detail.setObjectName("audit")
         self.detail.setAccessibleName("Audit trail of the selected request")
         self.detail.setPlaceholderText("Select a request to see its audit trail.")
         split.addWidget(self.detail)
@@ -109,6 +104,25 @@ class HistoryPage(QWidget):
         split.setStretchFactor(1, 1)
         root.addWidget(split, 1)
         self.refresh()
+
+    def _build_table(self) -> QTableWidget:
+        table = QTableWidget(0, len(COLUMNS))
+        self.table = table
+        table.setHorizontalHeaderLabels(COLUMNS)
+        table.setAccessibleName("Request history")
+        table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        table.verticalHeader().setVisible(False)
+        table.verticalHeader().setDefaultSectionSize(42)
+        table.setShowGrid(False)
+        header = table.horizontalHeader()
+        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        header.setHighlightSections(False)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        table.itemSelectionChanged.connect(self._show_detail)
+        return table
 
     def on_event(self, event: Event) -> None:
         if event.kind in ("changed", "copy_finished", "reply_sent"):
@@ -137,8 +151,12 @@ class HistoryPage(QWidget):
                 str(v.file_count) if v.file_count is not None else "",
                 v.size_text,
             ]  # fmt: skip
+            tone = current_theme().tones.get(style_for(v.state).tone)
             for col, text in enumerate(cells):
-                self.table.setItem(row, col, QTableWidgetItem(text))
+                item = QTableWidgetItem(text)
+                if col == STATUS_COLUMN and tone is not None:
+                    item.setForeground(QColor(tone.fg))
+                self.table.setItem(row, col, item)
             if v.id == selected:
                 self.table.selectRow(row)
         self.table.resizeColumnsToContents()

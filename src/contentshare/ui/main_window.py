@@ -8,7 +8,6 @@ from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
-    QListWidget,
     QListWidgetItem,
     QMainWindow,
     QStackedWidget,
@@ -29,6 +28,7 @@ from contentshare.ui.copies_page import CopiesPage
 from contentshare.ui.help_page import HelpPage
 from contentshare.ui.history_page import HistoryPage
 from contentshare.ui.icons import app_icon
+from contentshare.ui.nav import NavList
 from contentshare.ui.requests_page import RequestsPage, summarize_check
 from contentshare.ui.settings_page import SettingsPage
 from contentshare.ui.theme import apply_theme, theme_for
@@ -46,8 +46,23 @@ UPDATE_CHECK_DELAY_MS = 4000  # let the window appear and the first work settle 
 def _banner(text: str) -> QLabel:
     label = QLabel(text)
     label.setObjectName("banner")
-    label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
     return label
+
+
+def _brand() -> QWidget:
+    """The program's icon and name at the top of the sidebar."""
+    holder = QWidget()
+    row = QHBoxLayout(holder)
+    row.setContentsMargins(20, 22, 16, 14)
+    row.setSpacing(10)
+    mark = QLabel()
+    mark.setPixmap(app_icon().pixmap(28, 28))
+    row.addWidget(mark)
+    name = QLabel("ContentShare")
+    name.setObjectName("brand")
+    row.addWidget(name, 1)
+    return holder
 
 
 class MainWindow(QMainWindow):
@@ -84,13 +99,12 @@ class MainWindow(QMainWindow):
         body.setSpacing(0)
         side = QFrame()
         side.setObjectName("sidebar")
-        side.setFixedWidth(210)
+        side.setFixedWidth(236)
         side_layout = QVBoxLayout(side)
-        brand = QLabel("ContentShare")
-        brand.setStyleSheet("font-size: 14pt; font-weight: 600; padding: 14px 16px;")
-        side_layout.addWidget(brand)
-        self.nav = QListWidget()
-        self.nav.setObjectName("nav")
+        side_layout.setContentsMargins(0, 0, 0, 14)
+        side_layout.setSpacing(4)
+        side_layout.addWidget(_brand())
+        self.nav = NavList()
         self.nav.setAccessibleName("Screens")
         for name in PAGES:
             self.nav.addItem(QListWidgetItem(name))

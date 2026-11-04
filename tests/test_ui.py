@@ -185,7 +185,8 @@ def test_ready_card_shows_everything_the_wireframe_promises(rig: Rig) -> None:
     texts = " ".join(label.text() for label in card.findChildren(type(card.status)))
     assert "✔ Ready" in texts and "Sender verified" in texts
     assert "Anita R." in texts and "Media Team" in texts
-    assert "SunriseTalk_EN" in texts and "Copy to" in texts and "confidence" in texts
+    assert "SunriseTalk_EN" in texts and "confidence" in texts
+    assert "copy to" in texts.lower()  # the small heading above the destination
     assert [b.text() for b in card.findChildren(QPushButton) if b.text()][:2] == [
         "▸ Show text",
         "Change content…",

@@ -7,19 +7,21 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
 
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QCheckBox,
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 from shiboken6 import isValid
 
-from contentshare.app.controller import ApproveResult, RequestView
+from contentshare.app.controller import ApproveResult, CandidateView, RequestView
 from contentshare.copy_engine import format_bytes
 from contentshare.gmail.replies import ReplyResult
 from contentshare.ui.context import UiContext
@@ -31,6 +33,7 @@ from contentshare.ui.dialogs import (
 )
 from contentshare.ui.status import confidence_dots, style_for
 from contentshare.ui.timefmt import local_stamp
+from contentshare.ui.widgets import ElidedLabel
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
@@ -49,6 +52,8 @@ class CardState:
 
 
 def _label(text: str = "", role: str | None = None, wrap: bool = True) -> QLabel:
+    if not wrap and role != "section":  # one line, shortened in the middle if needed
+        return ElidedLabel(text, role)
     label = QLabel(text)
     label.setWordWrap(wrap)
     if role:
@@ -59,7 +64,30 @@ def _label(text: str = "", role: str | None = None, wrap: bool = True) -> QLabel
 def _chip(text: str, tone: str) -> QLabel:
     chip = QLabel(text)
     chip.setProperty("tone", tone)
+    chip.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
     return chip
+
+
+def _note_row(chip: QLabel) -> QHBoxLayout:
+    """A chip that keeps its own width instead of stretching across the card."""
+    row = QHBoxLayout()
+    row.addWidget(chip)
+    row.addStretch(1)
+    return row
+
+
+def _inset() -> QFrame:
+    """A sunken panel inside the card, for the paths and matches."""
+    frame = QFrame()
+    frame.setObjectName("inset")
+    return frame
+
+
+def _divider() -> QFrame:
+    line = QFrame()
+    line.setObjectName("divider")
+    line.setFrameShape(QFrame.Shape.NoFrame)
+    return line
 
 
 def _button(
@@ -104,35 +132,49 @@ class RequestCard(QFrame):
     def _build(self) -> None:
         v = self.view
         root = QVBoxLayout(self)
-        root.setContentsMargins(14, 12, 14, 12)
-        root.setSpacing(4)
+        root.setContentsMargins(18, 16, 18, 16)
+        root.setSpacing(10)
 
         head = QHBoxLayout()
+        head.setSpacing(10)
         self.select = QCheckBox()
         self.select.setAccessibleName(f"Select request {v.id}")
         self.select.setChecked(self.state.selected)
         self.select.toggled.connect(self._toggle_selected)
         head.addWidget(self.select)
-        head.addWidget(_label(f"#{v.id}", wrap=False))
+        title = _label(v.requested or "(nothing recognised)", "heading", wrap=False)
+        head.addWidget(title, 1)
         style = style_for(v.state)
         self.status = _chip(style.text, style.tone)
         head.addWidget(self.status)
-        if v.verified_sender:
-            head.addWidget(_chip("✔ Sender verified", "neutral"))
-        else:
-            head.addWidget(_chip("⚠ Sender NOT verified", "warn"))
-        head.addStretch(1)
-        head.addWidget(_label(local_stamp(v.received_at), "muted", wrap=False))
         root.addLayout(head)
 
-        who = f"{v.sender_name} <{v.sender_email}>" if v.sender_name else v.sender_email
-        root.addWidget(_label(f"From  {who}  ·  {v.department or 'not in any department'}"))
+        who = f"{v.sender_name} · {v.sender_email}" if v.sender_name else v.sender_email
+        meta = QHBoxLayout()
+        meta.setSpacing(8)
+        meta.addSpacing(26)  # lines up with the title, past the tick box
+        meta.addWidget(
+            _label(
+                f"{who}  ·  {v.department or 'not in any department'}  ·  "
+                f"{local_stamp(v.received_at)}  ·  #{v.id}",
+                "small",
+                wrap=False,
+            ),
+            1,
+        )
+        if v.verified_sender:
+            meta.addWidget(_chip("✔ Sender verified", "neutral"))
+        else:
+            meta.addWidget(_chip("⚠ Sender NOT verified", "warn"))
+        root.addLayout(meta)
+
         self._subject_row(root)
-        root.addWidget(_label(f"Requested  {v.requested}"))
         if v.reason:
             root.addWidget(_label(v.reason, "muted"))
         for warning in v.warnings:
-            root.addWidget(_chip(f"⚠ {warning}", "warn"))
+            if "could not be verified" in warning:
+                continue  # the sender chip and the reason above already say it
+            root.addLayout(_note_row(_chip(f"⚠ {warning}", "warn")))
 
         {
             "NEEDS_REVIEW": self._review_section,
@@ -145,46 +187,46 @@ class RequestCard(QFrame):
 
     def _subject_row(self, root: QVBoxLayout) -> None:
         row = QHBoxLayout()
-        row.addWidget(_label(f"Re  “{self.view.subject}”"), 1)
+        row.addWidget(_label(f"Subject: {self.view.subject}", "muted", wrap=False), 1)
         self.text_toggle = QPushButton("▸ Show text")
         self.text_toggle.setFlat(True)
         self.text_toggle.setAccessibleName("Show the start of the email")
         self.text_toggle.clicked.connect(self._toggle_text)
         row.addWidget(self.text_toggle)
         root.addLayout(row)
-        self.snippet = _label(self.view.snippet or "(no text)", "muted")
+        self.snippet = _label(self.view.snippet or "(no text)", "quote")
         self.snippet.setVisible(self.state.show_text)
         root.addWidget(self.snippet)
 
     def _add_actions(self, root: QVBoxLayout, *buttons: QPushButton) -> None:
+        root.addWidget(_divider())
         row = QHBoxLayout()
+        row.setSpacing(8)
         for button in buttons:
             self._buttons.append(button)
             row.addWidget(button)
-        gmail = _button("Open email in Gmail", self._open_gmail)
-        row.addWidget(gmail)
         row.addStretch(1)
+        gmail = _button("Open email in Gmail", self._open_gmail)
+        gmail.setFlat(True)
+        row.addWidget(gmail)
         root.addLayout(row)
 
     # ------------------------------------------------------------------ state sections
     def _review_section(self, root: QVBoxLayout) -> None:
         v = self.view
         if v.candidates:
-            root.addWidget(_label("Top matches", "muted"))
-        for candidate in v.candidates[:5]:
-            row = QHBoxLayout()
-            use = _button("Use this", partial(self._choose, candidate.item_id))
-            use.setAccessibleName(f"Use {candidate.path}")
-            self._buttons.append(use)
-            row.addWidget(use)
-            info = _label(
-                f"{candidate.path}\n{format_bytes(candidate.size)} · {candidate.file_count} file(s)"
-                f" · {confidence_dots(candidate.score)}"
-                + (f" · {'; '.join(candidate.notes)}" if candidate.notes else "")
-            )
-            info.setProperty("role", "path")
-            row.addWidget(info, 1)
-            root.addLayout(row)
+            root.addWidget(_label("TOP MATCHES", "section", wrap=False))
+        shown = v.candidates[:5]
+        if shown:
+            box = _inset()
+            inner = QVBoxLayout(box)
+            inner.setContentsMargins(14, 6, 10, 6)
+            inner.setSpacing(0)
+            for position, candidate in enumerate(shown):
+                if position:
+                    inner.addWidget(_divider())
+                inner.addLayout(self._candidate_row(candidate))
+            root.addWidget(box)
         self._add_actions(
             root,
             _button("Search manually…", self._search_manually, primary=not v.candidates),
@@ -192,24 +234,64 @@ class RequestCard(QFrame):
             _button("Reject…", self._reject, danger=True),
         )
 
+    def _candidate_row(self, candidate: CandidateView) -> QHBoxLayout:
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 8, 0, 8)
+        row.setSpacing(12)
+        text = QVBoxLayout()
+        text.setSpacing(2)
+        text.addWidget(_label(candidate.path, "path", wrap=False))
+        text.addWidget(
+            _label(
+                f"{format_bytes(candidate.size)} · {candidate.file_count} file(s) · "
+                f"{confidence_dots(candidate.score)}"
+                + (f" · {'; '.join(candidate.notes)}" if candidate.notes else ""),
+                "small",
+                wrap=False,
+            )
+        )
+        row.addLayout(text, 1)
+        use = _button("Use this", partial(self._choose, candidate.item_id))
+        use.setAccessibleName(f"Use {candidate.path}")
+        self._buttons.append(use)
+        row.addWidget(use, 0, Qt.AlignmentFlag.AlignVCenter)
+        return row
+
     def _ready_section(self, root: QVBoxLayout) -> None:
         v = self.view
-        found = _label(f"Found  {v.source_path}", "path")
-        root.addWidget(found)
-        root.addWidget(
+        box = _inset()
+        grid = QGridLayout(box)
+        grid.setContentsMargins(14, 12, 14, 12)
+        grid.setHorizontalSpacing(14)
+        grid.setVerticalSpacing(8)
+        grid.setColumnStretch(1, 1)
+        grid.addWidget(_label("FOUND", "section", wrap=False), 0, 0)
+        grid.addWidget(_label(v.source_path or "", "path", wrap=False), 0, 1)
+        grid.addWidget(_label("COPY TO", "section", wrap=False), 1, 0)
+        grid.addWidget(_label(v.destination_path or "", "path", wrap=False), 1, 1)
+        grid.addWidget(
             _label(
                 f"{v.size_text} · {v.file_count} file(s) · "
                 f"confidence {confidence_dots(v.confidence)}",
-                "muted",
-            )
+                "small",
+                wrap=False,
+            ),
+            2,
+            1,
         )
-        copy_to = _label(f"Copy to  {v.destination_path}", "path")
-        root.addWidget(copy_to)
-        row = QHBoxLayout()
-        row.addWidget(_button("Change content…", self._search_manually))
-        row.addWidget(_button("Edit destination…", self._edit_destination))
-        row.addStretch(1)
-        root.addLayout(row)
+        root.addWidget(box)
+
+        change = QHBoxLayout()
+        change.setSpacing(8)
+        for text, slot in (
+            ("Change content…", self._search_manually),
+            ("Edit destination…", self._edit_destination),
+        ):
+            button = _button(text, slot)
+            button.setFlat(True)
+            change.addWidget(button)
+        change.addStretch(1)
+        root.addLayout(change)
 
         self.confirm = QCheckBox("Confirm copy")
         self.confirm.setChecked(self.state.confirm)
@@ -235,7 +317,7 @@ class RequestCard(QFrame):
 
     def _failed_section(self, root: QVBoxLayout) -> None:
         v = self.view
-        root.addWidget(_chip(f"✖ {v.failure_reason or 'The copy failed'}", "error"))
+        root.addLayout(_note_row(_chip(f"✖ {v.failure_reason or 'The copy failed'}", "error")))
         root.addWidget(_label("No “shared” reply can be sent until a copy is verified.", "muted"))
         self._add_actions(
             root,

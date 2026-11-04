@@ -20,7 +20,7 @@ from contentshare.ui.context import UiContext
 from contentshare.ui.request_card import OPEN_STATES, CardState, RequestCard
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
-from contentshare.ui.widgets import StackBody
+from contentshare.ui.widgets import StackBody, page_header
 
 FILTERS: list[tuple[str, set[str] | None]] = [
     ("Open requests", OPEN_STATES),
@@ -60,32 +60,35 @@ class RequestsPage(QWidget):
         self._refresh_pending = False
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 16, 20, 12)
+        root.setContentsMargins(32, 28, 26, 16)
+        root.setSpacing(14)
         self._build_header(root)
         self._build_toolbar(root)
 
         self.scroller = QScrollArea()
         self.scroller.setWidgetResizable(True)
+        self.scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.body = StackBody()
         self.scroller.setWidget(self.body)
         root.addWidget(self.scroller, 1)
 
         self.empty = QLabel()
-        self.empty.setProperty("role", "muted")
+        self.empty.setProperty("role", "empty")
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.empty.setWordWrap(True)
-        root.addWidget(self.empty)
+        root.addWidget(self.empty, 1)
         self.refresh()
 
     def _build_header(self, root: QVBoxLayout) -> None:
         head = QHBoxLayout()
-        title = QLabel("Requests")
-        title.setProperty("role", "title")
-        head.addWidget(title)
+        head.addLayout(
+            page_header("Requests", "Emails from your departments, matched to the storage server.")
+        )
         head.addStretch(1)
         self.last_check = QLabel()
         self.last_check.setProperty("role", "muted")
         head.addWidget(self.last_check)
+        head.addSpacing(8)
         self.check_button = QPushButton("Check now")
         self.check_button.setProperty("primary", True)
         self.check_button.clicked.connect(self.check_now)
@@ -158,6 +161,7 @@ class RequestsPage(QWidget):
             "" if views else "Nothing to show here. Click “Check now” to look for new requests."
         )
         self.empty.setVisible(not views)
+        self.scroller.setVisible(bool(views))
         summary = controller.index_summary()
         self.index_note.setVisible(summary["items"] == 0)
         self.index_note.setText(

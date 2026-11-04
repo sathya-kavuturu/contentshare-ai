@@ -13,7 +13,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import (
+    QColor,
+    QDesktopServices,
+    QTextDocument,
+    QTextFrameFormat,
+    QTextTable,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -25,7 +31,9 @@ from PySide6.QtWidgets import (
 )
 
 import contentshare
+from contentshare.ui.theme import MONO_STACK, Theme, current_theme
 from contentshare.ui.widgets import Label as QLabel
+from contentshare.ui.widgets import page_header
 
 log = logging.getLogger(__name__)
 
@@ -58,6 +66,46 @@ def load_topics(folder: Path = HELP_DIR) -> list[Topic]:
     return topics
 
 
+def help_css(t: Theme) -> str:
+    """How the Markdown is drawn: the same colours and sizes as the rest of the program."""
+    return f"""
+    body {{ color: {t.text}; font-size: 13px; }}
+    h1 {{ font-size: 24px; font-weight: 600; color: {t.text}; margin-top: 0; margin-bottom: 6px; }}
+    h2 {{ font-size: 17px; font-weight: 600; color: {t.text}; margin-top: 22px;
+        margin-bottom: 4px; }}
+    h3 {{ font-size: 14px; font-weight: 600; color: {t.text}; margin-top: 16px; }}
+    p, li {{ color: {t.text}; font-size: 13px; }}
+    li {{ margin-bottom: 3px; }}
+    a {{ color: {t.link}; text-decoration: none; }}
+    code {{ font-family: {MONO_STACK}; font-size: 12px; background-color: {t.window};
+        color: {t.text}; }}
+    em {{ color: {t.muted}; }}
+    table {{ border-color: {t.border}; border-collapse: collapse; }}
+    th {{ background-color: {t.window}; color: {t.muted}; font-size: 12px; font-weight: 600;
+        padding: 6px 10px; }}
+    td {{ padding: 6px 10px; border-color: {t.border}; }}
+    """
+
+
+def _style_tables(document: QTextDocument, t: Theme) -> None:
+    """Markdown tables come out with black borders; give them hairlines and some air."""
+    for frame in document.rootFrame().childFrames():
+        if not isinstance(frame, QTextTable):
+            continue
+        fmt = frame.format()
+        fmt.setBorder(1)
+        fmt.setBorderBrush(QColor(t.border))
+        fmt.setBorderStyle(QTextFrameFormat.BorderStyle.BorderStyle_Solid)
+        fmt.setCellPadding(8)
+        fmt.setCellSpacing(0)
+        frame.setFormat(fmt)
+        for column in range(frame.columns()):
+            cell = frame.cellAt(0, column)
+            cell_fmt = cell.format()
+            cell_fmt.setBackground(QColor(t.window))
+            cell.setFormat(cell_fmt)
+
+
 class _Browser(QTextBrowser):
     """Shows Markdown; never loads anything from the network or the disk."""
 
@@ -72,10 +120,11 @@ class HelpPage(QWidget):
         self.topics = load_topics() if topics is None else topics
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 16, 20, 12)
-        title = QLabel("Help")
-        title.setProperty("role", "title")
-        root.addWidget(title)
+        root.setContentsMargins(32, 28, 26, 16)
+        root.setSpacing(14)
+        root.addLayout(
+            page_header("Help", "Connect Gmail, use the app, and what every setting does.")
+        )
 
         body = QHBoxLayout()
         self.topic_list = QListWidget()
@@ -122,7 +171,9 @@ class HelpPage(QWidget):
 
     def _show_row(self, row: int) -> None:
         if 0 <= row < len(self.topics):
+            self.browser.document().setDefaultStyleSheet(help_css(current_theme()))
             self.browser.setMarkdown(self.topics[row].markdown)
+            _style_tables(self.browser.document(), current_theme())
             self.browser.verticalScrollBar().setValue(0)
 
     def _link(self, url: QUrl) -> None:

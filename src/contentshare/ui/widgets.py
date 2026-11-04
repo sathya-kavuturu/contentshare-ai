@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QResizeEvent
-from PySide6.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QFontMetrics, QPainter, QPaintEvent, QResizeEvent
+from PySide6.QtWidgets import QLabel, QMessageBox, QSizePolicy, QVBoxLayout, QWidget
 
 
 class Label(QLabel):
@@ -19,6 +19,68 @@ class Label(QLabel):
     def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
         super().__init__(text, parent)
         self.setTextFormat(Qt.TextFormat.PlainText)
+
+
+def page_header(title: str, subtitle: str = "") -> QVBoxLayout:
+    """The big title of a screen with a quiet line under it saying what the screen is for."""
+    block = QVBoxLayout()
+    block.setSpacing(2)
+    heading = Label(title)
+    heading.setProperty("role", "title")
+    block.addWidget(heading)
+    if subtitle:
+        line = Label(subtitle)
+        line.setProperty("role", "muted")
+        block.addWidget(line)
+    return block
+
+
+class ElidedLabel(Label):
+    """Text on one line that is shortened in the middle when it does not fit; the full text is
+    the tooltip.
+
+    A path has no spaces to wrap at, so a long one used to make its whole card wider than the
+    window. A label that never wraps also has a fixed height, which keeps the height of a card
+    that is made of such rows easy to work out.
+    """
+
+    def __init__(
+        self, text: str = "", role: str | None = None, parent: QWidget | None = None
+    ) -> None:
+        super().__init__(text, parent)
+        if role:
+            self.setProperty("role", role)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.setToolTip(text)
+        self.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+    def setText(self, text: str) -> None:  # noqa: N802 - Qt override
+        super().setText(text)
+        self.setToolTip(text)
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        self.ensurePolished()  # the font comes from the style sheet
+        return QSize(60, QFontMetrics(self.font()).height() + 6)
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        return QSize(40, self.sizeHint().height())
+
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802 - Qt override
+        painter = QPainter(self)
+        painter.setPen(self.palette().windowText().color())
+        painter.setFont(self.font())
+        shown = QFontMetrics(self.font()).elidedText(
+            self.text(), Qt.TextElideMode.ElideMiddle, self.width()
+        )
+        painter.drawText(
+            self.rect(), int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), shown
+        )
+        painter.end()
+
+
+class PathLabel(ElidedLabel):
+    def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(text, "path", parent)
 
 
 class SafeMessageBox(QMessageBox):
@@ -101,8 +163,8 @@ class StackBody(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.stack = QVBoxLayout(self)
-        self.stack.setContentsMargins(0, 0, 8, 0)
-        self.stack.setSpacing(10)
+        self.stack.setContentsMargins(0, 0, 6, 0)
+        self.stack.setSpacing(12)
         self.stack.addStretch(1)
 
     def add(self, widget: QWidget) -> None:
@@ -123,9 +185,7 @@ class StackBody(QWidget):
             if child is not None and layout is not None:
                 # Qt under-reports the wrapped height of nested layouts, so never go below
                 # the layout's own preferred height.
-                child.setMinimumHeight(
-                    max(layout.totalHeightForWidth(width), layout.sizeHint().height())
-                )
+                child.setMinimumHeight(layout.totalHeightForWidth(width))
 
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt override
         super().resizeEvent(event)

@@ -19,7 +19,7 @@ from contentshare.ui.context import UiContext
 from contentshare.ui.status import human_eta
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
-from contentshare.ui.widgets import StackBody
+from contentshare.ui.widgets import StackBody, page_header
 
 STAGES = {"copy": "Copy", "verify": "Verify", "finalise": "Finalise", "done": "Done"}
 
@@ -48,10 +48,11 @@ class CopyRow(QFrame):
         self.setObjectName("card")
         self.ctx, self.request_id = ctx, item.request_id
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
         head = QHBoxLayout()
         self.title = QLabel()
-        self.title.setStyleSheet("font-weight: 600;")
+        self.title.setProperty("role", "heading")
         head.addWidget(self.title, 1)
         self.pause = QPushButton("Pause")
         self.pause.clicked.connect(self._toggle_pause)
@@ -105,19 +106,20 @@ class CopiesPage(QWidget):
         self.ctx = ctx
         self._rows: dict[int, CopyRow] = {}
         root = QVBoxLayout(self)
-        root.setContentsMargins(20, 16, 20, 12)
-        title = QLabel("Active copies")
-        title.setProperty("role", "title")
-        root.addWidget(title)
-        self.empty = QLabel("No copies are running.")
-        self.empty.setProperty("role", "muted")
+        root.setContentsMargins(32, 28, 26, 16)
+        root.setSpacing(14)
+        root.addLayout(page_header("Active copies", "Copies that are running right now."))
+        self.empty = QLabel("No copies are running.\nApproved requests show their progress here.")
+        self.empty.setProperty("role", "empty")
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.body = StackBody()
         scroll.setWidget(self.body)
+        self._scroll = scroll
         root.addWidget(scroll, 1)
-        root.addWidget(self.empty)
+        root.addWidget(self.empty, 1)
         self._timer = QTimer(self)  # progress arrives often; draw at most 4 times a second
         self._timer.setSingleShot(True)
         self._timer.setInterval(250)
@@ -143,6 +145,7 @@ class CopiesPage(QWidget):
                 self._rows[request_id] = row
                 self.body.add(row)
         self.empty.setVisible(not active)
+        self._scroll.setVisible(bool(active))
 
     def count(self) -> int:
         return len(self._rows)
