@@ -244,3 +244,97 @@ def test_the_help_explains_the_option(on: bool) -> None:
 
     text = {t.slug: t.markdown for t in load_topics()}
     assert "exact folder names" in text["settings"] and "exact folder names" in text["use"]
+
+
+# ---------------------------------------------------------------------- dates before names, files
+WEEK_EMAIL = (
+    "Namaskaram,\nRaising a request for content for following programs:\n\n"
+    "Nov 22-28 Amber Step 4 English v005\nNov 22-28 Amber Step 4 Hindi v002\n"
+    "Marathi Orchid 6th of November  \nNov 21-27 Amber 7 Days Hindi 02-nov-2026\n\n"
+    "Pranam,\nAsha\n"
+)
+
+
+def _make_week(h: Harness) -> None:  # noqa: F811
+    for folder in ("Amber Step 4 English v005", "Amber Step 4 Hindi v002", "Amber 7 Days Hindi 02-nov-2026"):
+        (h.world.storage / "Amber" / folder).mkdir(parents=True)
+        (h.world.storage / "Amber" / folder / "a.mp4").write_bytes(b"x" * 10)
+    (h.world.storage / "Marathi").mkdir()
+    (h.world.storage / "Marathi" / "Marathi Orchid 6th of November.mp4").write_bytes(b"y" * 10)
+    (h.world.storage / "Marathi" / "Marathi Orchid 6th of November 2.mp4").write_bytes(b"z")
+    h.world.index.scan_all([str(h.world.storage)])
+
+
+@pytest.mark.parametrize(
+    ("name", "rest"),
+    [
+        ("Nov 22-28 Amber Step 4 English v005", "Amber Step 4 English v005"),
+        ("Nov 22 - Nov 28, 2026: Amber Step 4", "Amber Step 4"),
+        ("22-28 Nov 2026 - Amber Step 4", "Amber Step 4"),
+        ("22nd of November Amber Step 4", "Amber Step 4"),
+        ("Nov 21-27 Amber 7 Days Hindi 02-nov-2026", "Amber 7 Days Hindi 02-nov-2026"),
+        ("Amber Step 4 Hindi Nov 22-28", None),  # a date after the name stays: it may be in the name
+        ("Marathi Orchid 6th of November", None),
+        ("Nov 22-28", None),  # nothing left
+    ],
+)
+def test_a_date_written_before_the_name_is_left_out(name: str, rest: str | None) -> None:
+    from contentshare.matching.exact import without_leading_date
+
+    assert without_leading_date(name) == rest
+
+
+def test_the_index_finds_a_file_by_its_name_with_or_without_the_extension(h: Harness) -> None:  # noqa: F811
+    _make_week(h)
+    found = h.world.index.find_files_named(
+        ["marathi orchid 6th of november", "Marathi Orchid 6th of November.mp4", "Marathi"]
+    )
+    assert set(found) == {
+        "marathi orchid 6th of november",
+        "Marathi Orchid 6th of November.mp4",
+    }
+    assert [i.name for i in found["marathi orchid 6th of november"]] == [
+        "Marathi Orchid 6th of November.mp4"  # "... November 2.mp4" is another file
+    ]
+
+
+def test_a_request_with_dates_before_folder_names_and_a_file_name(h: Harness) -> None:  # noqa: F811
+    _make_week(h)
+    _exact(h)
+    h.mail(message_id="x11", subject="Content request", body=WEEK_EMAIL)
+    views = sorted(h.ctl.views(), key=lambda v: v.id)
+    by_name = {v.requested: v for v in views}
+    assert set(by_name) == {
+        "Nov 22-28 Amber Step 4 English v005",
+        "Nov 22-28 Amber Step 4 Hindi v002",
+        "Marathi Orchid 6th of November",
+        "Nov 21-27 Amber 7 Days Hindi 02-nov-2026",
+    }
+    assert all(v.state == "READY" for v in views), [(v.requested, v.state, v.reason) for v in views]
+    assert (by_name["Nov 22-28 Amber Step 4 English v005"].source_path or "").endswith(
+        "Amber Step 4 English v005"
+    )
+    marathi = by_name["Marathi Orchid 6th of November"]
+    assert (marathi.source_path or "").endswith("Marathi Orchid 6th of November.mp4")
+    assert "File" in marathi.reason
+
+
+def test_a_folder_with_the_exact_name_is_preferred_over_a_file(h: Harness) -> None:  # noqa: F811
+    _make_week(h)
+    (h.world.storage / "Marathi Orchid 6th of November").mkdir()
+    h.world.index.scan_all([str(h.world.storage)])
+    _exact(h)
+    h.mail(message_id="x12", subject="Request", body="Marathi Orchid 6th of November")
+    (view,) = h.ctl.views()
+    assert view.state == "READY" and (view.source_path or "").endswith("6th of November")
+    assert "Folder" in view.reason
+
+
+def test_a_whole_line_that_is_a_folder_name_is_still_tried_first(h: Harness) -> None:  # noqa: F811
+    (h.world.storage / "Nov 22-28 Special").mkdir()
+    (h.world.storage / "Special").mkdir()
+    h.world.index.scan_all([str(h.world.storage)])
+    _exact(h)
+    h.mail(message_id="x13", subject="Request", body="Nov 22-28 Special")
+    (view,) = h.ctl.views()
+    assert view.state == "READY" and (view.source_path or "").endswith("Nov 22-28 Special")

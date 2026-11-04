@@ -1,4 +1,5 @@
 """Exact folder names: for departments whose requests give the folder name as it is on the server.
+(A file is found the same way, by its name with or without its extension.)
 
 Nothing is guessed here. The email is read for names (one per line, in a list, in quotes, or as a
 single word that looks like a folder name such as ``2026-10-12_SunriseTalk_EN``), and each name
@@ -13,7 +14,7 @@ import re
 from dataclasses import dataclass
 
 from contentshare.index.store import IndexedItem
-from contentshare.parsing.dates import find_dates
+from contentshare.parsing.dates import MONTH_PATTERN, find_dates
 from contentshare.parsing.text import clean_body, clean_subject, strip_links
 
 MAX_NAMES = 60  # names looked up per email
@@ -27,12 +28,33 @@ _QUOTED = re.compile(rf"[{_OPEN_QUOTES}]([^{_CLOSE_QUOTES}\n]{{3,200}})[{_CLOSE_
 _SPLIT = re.compile(r"[,;|]")
 _WORD = re.compile(rf"[^\s,;|()\[\]{{}}<>{_OPEN_QUOTES}{chr(0x201D)}]+")
 _NAME_LIKE = re.compile(r"^[\w.\-]{5,200}$")
+_DAY = r"\d{1,2}(?:st|nd|rd|th)?"
+_RANGE = rf"\s*[-{_DASHES}]\s*"
+# "Nov 22-28 ", "Nov 22 - Nov 28, 2026: ", "22-28 Nov 2026 - " at the start of a line: the week or
+# day a request is for, written before the name of the folder.
+_LEADING_DATE = re.compile(
+    rf"^(?:(?:{MONTH_PATTERN})\b\.?\s*{_DAY}(?:{_RANGE}(?:(?:{MONTH_PATTERN})\b\.?\s*)?{_DAY})?"
+    rf"|{_DAY}(?:{_RANGE}{_DAY})?\s+(?:of\s+)?(?:{MONTH_PATTERN})\b\.?)"
+    rf"(?:,?\s*\d{{4}}\b)?\s*[-{_DASHES}:|,]?\s+(?=\S)",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
 class WantedName:
     name: str
     explicit: bool  # a list item, a quoted name or a folder-looking word: report it if missing
+    # What is left when a date written before the name is dropped ("Nov 22-28 Amber Step 4 Hindi v002"
+    # is the folder "Amber Step 4 Hindi v002"). Tried only when nothing is named exactly ``name``.
+    alternates: tuple[str, ...] = ()
+
+
+def without_leading_date(name: str) -> str | None:
+    """``name`` without a date or date range before it, or ``None`` if it does not start with one
+    (or nothing would be left). A date after the name is kept: it is part of the folder's name."""
+    match = _LEADING_DATE.match(name)
+    rest = _tidy(name[match.end() :]) if match else ""
+    return rest if len(rest) >= 3 else None
 
 
 def _tidy(text: str) -> str:
@@ -59,7 +81,8 @@ def wanted_names(subject: str, body: str) -> list[WantedName]:
         key = name.casefold()
         previous = found.get(key)
         if previous is None or (explicit and not previous.explicit):
-            found[key] = WantedName(name, explicit)
+            shorter = without_leading_date(name)
+            found[key] = WantedName(name, explicit, (shorter,) if shorter else ())
 
     lines = [clean_subject(strip_links(subject))] if subject.strip() else []
     lines += clean_body(body).split("\n") if body.strip() else []

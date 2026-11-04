@@ -17,6 +17,7 @@ _WEEKDAYS = {
     "sunday": 6,
 }  # fmt: skip
 _M = "|".join(sorted(_MONTHS, key=len, reverse=True))
+MONTH_PATTERN = _M  # month names, for other modules that read dates
 _FLAGS = re.IGNORECASE
 _DASHES = "-" + chr(0x2013) + chr(0x2014)  # hyphen, en dash, em dash
 _ISO = re.compile(r"(?<!\d)(20\d{2})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)")

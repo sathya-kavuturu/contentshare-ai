@@ -148,17 +148,27 @@ def exact_items(
     that name is READY; a name with several folders is NEEDS_REVIEW (pick one); a name that
     clearly was meant as a folder but has none is NEEDS_REVIEW (browse for it)."""
     wanted = wanted_names(subject, body)
-    matches = drop_enclosing(index.find_dirs_named([w.name for w in wanted], roots))
+    tries = list(dict.fromkeys(n for w in wanted for n in (w.name, *w.alternates)))
+    folders = drop_enclosing(index.find_dirs_named(tries, roots))
+    # a file only when no folder has that name: a folder is what is usually asked for
+    files = index.find_files_named([n for n in tries if n not in folders], roots)
     pairs: list[tuple[RequestItem, Triage]] = []
     for w in wanted:
-        items = matches.get(w.name)
+        found_as, items = next(
+            ((n, folders.get(n) or files.get(n)) for n in (w.name, *w.alternates)
+             if folders.get(n) or files.get(n)),
+            (w.name, None),
+        )  # fmt: skip
         request = RequestItem(program=w.name, raw=w.name)
+        kind = "Folder" if items and items[0].is_dir else "File"
         if items and len(items) == 1:
             candidate = _exact_candidate(items[0])
-            reason = f"Folder “{items[0].name}” found with exactly that name"
+            reason = f"{kind} “{items[0].name}” found with exactly that name"
             pairs.append((request, Triage(RequestState.READY, reason, [candidate], candidate)))
         elif items:
-            reason = f"{len(items)} folders are named “{w.name}”; please pick the right one"
+            reason = (
+                f"{len(items)} {kind.lower()}s are named “{found_as}”; please pick the right one"
+            )
             candidates = [_exact_candidate(i) for i in items]
             pairs.append((request, Triage(RequestState.NEEDS_REVIEW, reason, candidates)))
         elif w.explicit:

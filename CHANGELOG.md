@@ -74,6 +74,12 @@ uses [semantic versioning](https://semver.org/).
 - Settings and Help are laid out in the background shortly after start, so they open at once.
 
 ### Fixed
+- **Exact folder names missed lines that began with a date.** A line such as `Nov 22-28 Amber Step 4
+  Hindi v002` is now looked up as the folder `Amber Step 4 Hindi v002` when no folder has the whole
+  line as its name. A date after the name is kept, as it can be part of it.
+- **Exact names only looked for folders.** When no folder has the name, a file with exactly that
+  name (with or without its extension) is used, so `Marathi Orchid 6th of November` finds the
+  video file. A folder is still preferred.
 - A card removed from the Requests list could linger on screen for a moment, showing through the new
   cards; it is now hidden at once.
 - **Settings flipped back to light mode and was slow to open.** Opening Settings re-applied the saved

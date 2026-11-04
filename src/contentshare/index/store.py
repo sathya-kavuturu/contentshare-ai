@@ -106,6 +106,19 @@ class _Stop(Exception):  # noqa: N818 - control flow, not an error
     pass
 
 
+_EXTENSION = re.compile(r"[A-Za-z0-9]{1,5}")
+
+
+def _is_name_with_extension(file_name: str, wanted: str) -> bool:
+    """``Talk`` and ``Talk.mp4`` are the name ``Talk``; ``Talk 2.mp4`` is not."""
+    if file_name.casefold() == wanted.casefold():
+        return True
+    stem, dot, extension = file_name.rpartition(".")
+    return (
+        bool(dot) and stem.casefold() == wanted.casefold() and bool(_EXTENSION.fullmatch(extension))
+    )
+
+
 def _row_to_item(row: Any) -> IndexedItem:
     return IndexedItem(
         id=row["id"], root=row["root"], rel_path=row["rel_path"], name=row["name"],
@@ -269,6 +282,29 @@ class ContentIndex:
                 ).fetchall()
                 if rows:
                     found[name] = [_row_to_item(r) for r in rows]
+        return found
+
+    def find_files_named(
+        self, names: Sequence[str], roots: Sequence[str] | None = None
+    ) -> dict[str, list[IndexedItem]]:
+        """Files called exactly one of ``names`` with or without an extension (``Talk`` finds
+        ``Talk.mp4``; capitals do not matter), by the name asked for. Names with no file are left
+        out. Every value is a bound parameter."""
+        found: dict[str, list[IndexedItem]] = {}
+        scope, root_args = _in_roots("root", roots)
+        with self.db.read() as conn:
+            for name in names:
+                rows = conn.execute(
+                    # a range on the name column (sorted case-blind), so the index is used:
+                    # "Talk", then "Talk." up to just before "Talk/"
+                    "SELECT * FROM content_items WHERE kind = 'file' AND name >= ? COLLATE NOCASE "  # noqa: S608
+                    f"AND name < ? COLLATE NOCASE{scope} ORDER BY depth, root, rel_path LIMIT 200",
+                    (name, name + "/", *root_args),
+                ).fetchall()
+                items = [_row_to_item(r) for r in rows]
+                items = [i for i in items if _is_name_with_extension(i.name, name)][:50]
+                if items:
+                    found[name] = items
         return found
 
     def get(self, item_id: int) -> IndexedItem | None:

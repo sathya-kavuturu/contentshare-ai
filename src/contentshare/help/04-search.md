@@ -122,6 +122,12 @@ searched differently, and nothing is guessed.
   a number and is not just a date). Up to 60 names are looked up.
 * Each name is looked up in the index as a **folder with exactly that name**. Capital letters do
   not matter, as in Windows.
+* A date written **before** the name is left out when nothing has the whole line as its name:
+  `Nov 22-28 Amber Step 4 Hindi v002` finds the folder `Amber Step 4 Hindi v002`. (A date after the name
+  is kept, because it may be part of the folder's name, as in `Amber 7 Days Hindi 02-nov-2026`.)
+* If no **folder** has the name, a **file** with exactly that name is used, with or without its
+  extension: `Marathi Orchid 6th of November` finds `Marathi Orchid 6th of November.mp4`. A
+  folder is always preferred over a file.
 * **One** folder with that name: **Ready**. **Several** folders with that name: **Needs review**,
   and you pick one. **None**: **Needs review**, and the card says no folder with that name was
   found.
