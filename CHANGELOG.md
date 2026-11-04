@@ -32,6 +32,10 @@ uses [semantic versioning](https://semver.org/).
   file) on the storage server, with or without a date range written before it, for every
   department, whether or not *The emails give exact folder names* is ticked. Only when no line is
   a folder name does the closest-match search run, as before.
+- **A folder made after the last scan was "not found".** The storage index is read about once a
+  day, so a folder created since then (for example this week's programs) was missing. When a
+  request is not found and the storage was last read more than 10 minutes ago, ContentShare now
+  reads the storage folders again once and looks again before marking it *Needs review*.
 - **A single file was copied into a folder named after the folder it was kept in.** A file is now
   copied straight into the department's folder, without that extra folder.
 - **A window no longer flashes when Settings is opened.** Looking up the Windows start-up task

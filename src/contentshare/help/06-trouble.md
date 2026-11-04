@@ -5,7 +5,7 @@
 | **"Gmail is not connected" bar** | *Settings → Gmail → Connect Gmail…* See [Connect Gmail](help:gmail). If it keeps coming back every week, the Google app is in *Testing* mode: use an **Internal** consent screen (see the Gmail guide). |
 | **Google says the app is blocked** | A Workspace admin must allow the OAuth client. See step 5 of [Connect Gmail](help:gmail). |
 | **A request is Needs review but the match is obvious** | Choose it with **Use this**. To make such matches Ready, lower *Mark Ready when at least* in *Settings → Matching and copying*, but check real matches first. |
-| **A program is not found** | *Settings → Index → Refresh index now*, and check the storage folders in *Settings → General*. See [How searching works](help:search) for how the index is used. |
+| **A program is not found** | *Settings → Index → Refresh index now*, and check the storage folders in *Settings → General*. A folder made since the last scan is picked up automatically: when a request is not found, the storage folders are read again (at most every 10 minutes), so that check can take a while. See [How searching works](help:search) for how the index is used. |
 | **Settings will not save** | Read the message: it names the entry. A copy running also blocks saving; try again when it finishes. |
 | **A storage folder was added by mistake** | *Settings → General*: select it, then **Remove** (or **Edit** to correct it), then **Save settings**. |
 | **A copy shows Failed again and again** | Read the reason. If files keep failing verification, test the PC's memory, the cable and the server, because the checksum is catching real corruption. |

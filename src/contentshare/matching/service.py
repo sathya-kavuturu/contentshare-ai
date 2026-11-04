@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -200,6 +200,31 @@ def exact_items(
     return pairs, ()
 
 
+REFRESH_AFTER_MINUTES = 10
+
+
+def _refresh_stale_index(index: ContentIndex, roots: list[str]) -> bool:
+    """Read the storage folders again when something asked for was not found and they were last
+    read a while ago: the folder may have been made since. Returns True if it did read them."""
+    now = datetime.now(UTC)
+    due: list[str] = []
+    for root in roots:
+        scan = index.last_scan(root)
+        try:
+            finished = datetime.fromisoformat(scan["finished_at"]) if scan else None
+        except (KeyError, TypeError, ValueError):
+            finished = None
+        if finished is not None and finished.tzinfo is None:
+            finished = finished.replace(tzinfo=UTC)
+        if finished is None or now - finished > timedelta(minutes=REFRESH_AFTER_MINUTES):
+            due.append(root)
+    if not due:
+        return False
+    log.info("a request was not found: reading %d storage folder(s) again", len(due))
+    index.scan_all(due)
+    return True
+
+
 def process_email_requests(
     repo: Repository,
     index: ContentIndex,
@@ -217,20 +242,29 @@ def process_email_requests(
         raise KeyError(f"No email {email_id}")
     dept = config.department_for_sender(email["sender_email"])
     roots = config.roots_for(dept)  # a department searches its own folders, not everyone's
-    if dept is not None and dept.exact_folder_names:
-        pairs, notes = exact_items(subject, body, index, roots)
-    else:
+
+    def read_lines() -> tuple[list[tuple[RequestItem, Triage]], tuple[str, ...]]:
+        if dept is not None and dept.exact_folder_names:
+            return exact_items(subject, body, index, roots)
         # A line that is exactly the name of a folder on the server (even one with a date in its
         # name, "Amber Step 4 English 31-oct-2026", or a date range before it) is that folder; the
         # free-text reading below would take the dates out of it and look for something else.
-        pairs, notes = exact_items(subject, body, index, roots, found_only=True)
-        if not pairs:
-            parsed = parse_request(subject, body, config.parsing, today=today)
-            items = list(parsed.items) or [RequestItem(program="")]
-            pairs = [
-                (item, triage_item(item, index, config, today=today, roots=roots)) for item in items
-            ]
-            notes = parsed.notes
+        found, found_notes = exact_items(subject, body, index, roots, found_only=True)
+        if found:
+            return found, found_notes
+        parsed = parse_request(subject, body, config.parsing, today=today)
+        items = list(parsed.items) or [RequestItem(program="")]
+        return (
+            [(i, triage_item(i, index, config, today=today, roots=roots)) for i in items],
+            parsed.notes,
+        )
+
+    pairs, notes = read_lines()
+    scan_roots = roots if roots is not None else config.all_roots()
+    if any(t.state != RequestState.READY for _, t in pairs) and _refresh_stale_index(
+        index, scan_roots
+    ):
+        pairs, notes = read_lines()  # a folder made since the last scan may be there now
 
     ids: list[int] = []
     for number, (item, first_triage) in enumerate(pairs, start=1):

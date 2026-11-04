@@ -382,3 +382,60 @@ def test_a_file_is_copied_without_its_parent_folder(h: Harness) -> None:  # noqa
     assert h.ctl.view(view.id).state == "VERIFIED"
     assert (root / "Marathi Orchid 6th of November.mp4").is_file()
     assert not (root / "Marathi").exists()  # no folder named after where the file was kept
+
+
+_THREE = (
+    "Amber Step 4 English 31-oct-2026",
+    "Amber 7 Days Hindi 02-nov-2026",
+    "Velvet Comet Open Floor 3rd Week 01-nov-2026",
+)
+
+
+@pytest.mark.parametrize("on", [True, False])
+def test_three_dated_folder_names_after_a_date_range_are_all_found(
+    h: Harness,  # noqa: F811
+    on: bool,
+) -> None:
+    for name in _THREE:
+        (h.world.storage / "Weekly" / name).mkdir(parents=True)
+        (h.world.storage / "Weekly" / name / "a.mp4").write_bytes(b"x" * 10)
+    h.world.index.scan_all([str(h.world.storage)])
+    _exact(h, on=on)
+    body = "Hi,\n\n" + "\n".join(f"Nov 22-28  {n}" for n in _THREE) + "\n\nThanks"
+    h.mail(message_id="x30", subject="Content request", body=body)
+    views = h.ctl.views()
+    assert len(views) == 3, [(v.requested, v.state, v.reason) for v in views]
+    assert all(v.state == "READY" for v in views), [(v.state, v.reason) for v in views]
+    assert sorted(Path(v.source_path or "").name for v in views) == sorted(_THREE)
+
+
+def _backdate_scans(h: Harness, minutes: int) -> None:  # noqa: F811
+    from datetime import UTC, datetime, timedelta
+
+    old = (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
+    with h.world.index.db.transaction() as conn:
+        conn.execute("UPDATE index_scans SET finished_at = ?", (old,))
+
+
+@pytest.mark.parametrize("on", [True, False])
+def test_a_folder_made_since_the_last_scan_is_found_by_reading_the_storage_again(
+    h: Harness,  # noqa: F811
+    on: bool,
+) -> None:
+    _exact(h, on=on)
+    _backdate_scans(h, 60)
+    (h.world.storage / "New" / _DATED).mkdir(parents=True)
+    (h.world.storage / "New" / _DATED / "a.mp4").write_bytes(b"x" * 10)
+    h.mail(message_id="x31", subject="Content request", body=f"Nov 22-28  {_DATED}")
+    (view,) = h.ctl.views()
+    assert view.state == "READY", (view.state, view.reason)
+    assert (view.source_path or "").endswith(_DATED)
+
+
+def test_the_storage_is_not_read_again_for_every_missing_name(h: Harness) -> None:  # noqa: F811
+    _exact(h)
+    _backdate_scans(h, 1)  # scanned a minute ago
+    (h.world.storage / "New" / _DATED).mkdir(parents=True)
+    h.mail(message_id="x32", subject="Content request", body=_DATED)
+    (view,) = h.ctl.views()
+    assert view.state == "NEEDS_REVIEW"  # too soon to read it all again
