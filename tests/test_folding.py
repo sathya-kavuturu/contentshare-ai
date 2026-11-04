@@ -28,13 +28,13 @@ def test_the_menu_folds_to_icons_and_opens_again(rig: Rig) -> None:  # noqa: F81
     window = rig.window
     assert not window.sidebar_collapsed and window.side.width() == SIDEBAR_WIDE
     assert not window._brand_name.isHidden()
-    assert window.side_toggle.accessibleName() == "Fold the menu"
-    window.side_toggle.click()
+    assert window.top_toggle.accessibleName() == "Fold the menu"
+    window.top_toggle.click()
     assert window.sidebar_collapsed and window.side.width() == SIDEBAR_NARROW
     assert window._brand_name.isHidden()
-    assert window.side_toggle.text() == "»"
-    assert window.side_toggle.accessibleName() == "Show the menu"
-    window.side_toggle.click()
+    assert window.top_toggle.toolTip() == "Show the menu names"
+    assert window.top_toggle.accessibleName() == "Show the menu"
+    window.top_toggle.click()
     assert not window.sidebar_collapsed and window.side.width() == SIDEBAR_WIDE
     assert not window._brand_name.isHidden()
 
@@ -202,7 +202,8 @@ def test_folded_cards_still_support_selecting_and_bulk_actions(rig: Rig) -> None
 
 def test_the_menu_icon_at_the_top_folds_and_opens_the_menu(rig: Rig) -> None:  # noqa: F811
     window = rig.window
-    assert window.top_toggle.text() == "☰"
+    assert window.top_toggle.toolTip() == "Fold the menu to icons"
+    assert not hasattr(window, "side_toggle")  # no second fold button at the bottom
     window.top_toggle.click()
     assert window.sidebar_collapsed and window.side.width() == SIDEBAR_NARROW
     assert window.top_toggle.accessibleName() == "Show the menu"

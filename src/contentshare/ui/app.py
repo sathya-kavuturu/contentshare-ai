@@ -177,7 +177,7 @@ def _run(app: QApplication, instance: SingleInstance, *, background: bool) -> in
     updater = Updater(__version__, data_dir() / "updates")
     window = MainWindow(
         controller, bridge, tray=tray, automation=automation, startup=startup, updater=updater,
-        ask_name=True,
+        ask_login=True,
     )  # fmt: skip
     instance.show_requested.connect(window.show_window)
     instance.quit_requested.connect(window.quit_app)

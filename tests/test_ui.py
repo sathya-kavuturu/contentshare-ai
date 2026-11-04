@@ -827,14 +827,16 @@ def test_gmail_buttons_follow_connection_state(rig: Rig, qtbot: Any, boxes: Boxe
     page = rig.window.settings
     page.load()
     page.secret.setText(str(secret))
-    qtbot.waitUntil(page.connect_button.isEnabled)  # the state is read in the background
-    assert not page.disconnect_button.isEnabled()
+    # the state is read in the background: wait for it, do not assume it is there yet
+    qtbot.waitUntil(
+        lambda: page.connect_button.isEnabled() and not page.disconnect_button.isEnabled()
+    )
     page.connect_button.click()
     qtbot.waitUntil(lambda: auth.connected and page.disconnect_button.isEnabled(), timeout=10000)
     assert "Connected" in page.gmail_state.text()
     page.disconnect_button.click()
     qtbot.waitUntil(lambda: any(s[1] == "Disconnected" for s in boxes.shown), timeout=10000)
-    assert page.gmail_state.text() == "Not connected"
+    qtbot.waitUntil(lambda: page.gmail_state.text() == "Not connected", timeout=10000)
 
 
 # --------------------------------------------------------------------------- wizard / window
@@ -1016,73 +1018,111 @@ def test_startup_helpers(isolated_home: Path, qtbot: Any) -> None:
 
 
 # --------------------------------------------------------------------------- who is using the app
-def test_the_name_dialog_needs_a_name(qtbot: Any) -> None:
-    from PySide6.QtWidgets import QDialog
-
-    from contentshare.ui.dialogs import UserNameDialog
-
-    first = UserNameDialog("")
-    qtbot.addWidget(first)
-    assert not first._ok.isEnabled()
-    closed: list[str] = []
-    first.rejected.connect(lambda: closed.append("closed"))
-    first.reject()  # no name saved yet: the close button and Escape do nothing
-    assert closed == []
-    first.name.setText("  Asha  ")
-    assert first._ok.isEnabled() and first.value() == "Asha"
-    first.accept()
-    assert first.result() == QDialog.DialogCode.Accepted
-
-    again = UserNameDialog("Asha")
-    qtbot.addWidget(again)
-    assert again._ok.isEnabled() and again.name.text() == "Asha"
-    again.rejected.connect(lambda: closed.append("closed"))
-    again.reject()
-    assert closed == ["closed"]  # Cancel keeps the saved name
-
-
-def test_the_app_asks_who_is_using_it_when_it_opens(
-    qtbot: Any, tmp_path: Path, db: Database, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from PySide6.QtWidgets import QDialog
-
-    from contentshare.ui.dialogs import UserNameDialog
-
-    asked: list[str] = []
-
-    def answer(self: UserNameDialog) -> QDialog.DialogCode:
-        asked.append(self.name.text())
-        self.name.setText("Asha Rao")
-        return QDialog.DialogCode.Accepted
-
-    monkeypatch.setattr(UserNameDialog, "exec", answer)
+def _controller_for_login(tmp_path: Path, db: Database) -> tuple[Controller, Bridge]:
     world = build_mail_world(tmp_path, db)
-    bridge = Bridge()
     controller = Controller(
         world.repo, world.index, world.config, gateway_factory=lambda: world.gateway,
         config_path=tmp_path / "config.yaml", today=lambda: TODAY,
     )  # fmt: skip
-    window = MainWindow(controller, bridge, ask_name=True)
+    return controller, Bridge()
+
+
+def test_the_login_box_signs_in_creates_users_and_rejects_wrong_passwords(
+    qtbot: Any, tmp_path: Path, db: Database
+) -> None:
+    from contentshare.ui.dialogs import LoginDialog
+
+    controller, bridge = _controller_for_login(tmp_path, db)
+    first = LoginDialog(controller)  # nobody exists yet: it starts on "create a user"
+    qtbot.addWidget(first)
+    assert first._creating and first.ok.text() == "Create user and sign in"
+    assert not first.switch.isVisibleTo(first)  # nothing to go back to
+    first.new_name.setText("Asha")
+    first.new_password.setText("a")
+    first.repeat.setText("b")
+    first.accept()
+    assert first.message.isVisibleTo(first) and not controller.signed_in  # the two differ
+    first.repeat.setText("a")
+    first.accept()
+    assert controller.user_name == "Asha"
+    controller.sign_out()
+
+    again = LoginDialog(controller)  # now it asks who you are
+    qtbot.addWidget(again)
+    assert not again._creating and again.user.currentText() == "Asha"
+    again.password.setText("wrong")
+    again.accept()
+    assert not controller.signed_in and again.message.isVisibleTo(again)
+    assert again.password.text() == ""  # emptied after a miss
+    again.password.setText("a")
+    again.accept()
+    assert controller.user_name == "Asha"
+    other = LoginDialog(controller)
+    qtbot.addWidget(other)
+    other.switch.click()  # "Create a new user…"
+    assert other._creating
+    other.new_name.setText("Ravi")
+    other.new_password.setText("x")
+    other.repeat.setText("x")
+    other.accept()
+    assert controller.user_name == "Ravi" and controller.user_names() == ["Asha", "Ravi"]
+    bridge.close()
+
+
+def test_the_app_asks_for_a_login_when_it_opens_and_quits_if_closed(
+    qtbot: Any, tmp_path: Path, db: Database, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    from contentshare.ui.dialogs import LoginDialog
+
+    controller, bridge = _controller_for_login(tmp_path, db)
+    controller.create_user("Asha", "pw")
+    controller.sign_out()
+    asked: list[bool] = []
+    answer = {"signed": True}
+
+    def fake_exec(self: LoginDialog) -> QDialog.DialogCode:
+        asked.append(self.cancel.text() == "Cancel")
+        if answer["signed"]:
+            self.password.setText("pw")
+            self.accept()
+            return QDialog.DialogCode.Accepted
+        return QDialog.DialogCode.Rejected
+
+    monkeypatch.setattr(LoginDialog, "exec", fake_exec)
+    window = MainWindow(controller, bridge, ask_login=True)
     qtbot.addWidget(window)
+    quits: list[bool] = []
+    monkeypatch.setattr(window, "quit_app", lambda: quits.append(True))
     assert not asked  # nothing before the window is shown
     window.show()
     qtbot.waitUntil(lambda: bool(asked))
-    assert asked == [""]
-    assert controller.user_name == "Asha Rao"
-    assert "Asha Rao" in window.user_button.text()
+    assert asked == [False] and controller.login_required and controller.user_name == "Asha"
+    assert "Asha" in window.user_button.text() and not quits
     window.hide()
     window.show()  # only once per start
     qtbot.wait(50)
     assert len(asked) == 1
-    asked.clear()
-    window.user_button.click()  # the button in the menu changes it later
-    assert asked == ["Asha Rao"]
-    controller.shutdown()
-    bridge.close()
+    window.user_button.click()  # the menu button switches user, and may be cancelled
+    assert asked[-1] is True and len(asked) == 2
+
+    closed, closed_bridge = _controller_for_login(tmp_path / "again", db)
+    answer["signed"] = False
+    window2 = MainWindow(closed, closed_bridge, ask_login=True)
+    qtbot.addWidget(window2)
+    quits2: list[bool] = []
+    monkeypatch.setattr(window2, "quit_app", lambda: quits2.append(True))
+    window2.show()
+    qtbot.waitUntil(lambda: bool(quits2))  # closing the box without signing in quits
+    assert not closed.signed_in
+    for c, b in ((controller, bridge), (closed, closed_bridge)):
+        c.shutdown()
+        b.close()
 
 
-def test_history_shows_the_typed_name_not_the_windows_one(rig: Rig) -> None:
-    rig.controller.set_user_name("Meera")
+def test_history_shows_the_signed_in_name(rig: Rig) -> None:
+    rig.controller.create_user("Meera", "pw")
     rig.window.refresh_user_button()
     assert "Meera" in rig.window.user_button.text()
     rig.controller.set_dry_run(True)  # checks only, so no copy is left running
@@ -1098,3 +1138,42 @@ def test_history_shows_the_typed_name_not_the_windows_one(rig: Rig) -> None:
         for r in range(rig.window.history.table.rowCount())
     ]
     assert "Meera" in texts
+
+
+# --------------------------------------------------------------------------- add a folder
+def test_the_card_offers_add_a_folder_and_lists_the_unsearched_lines(
+    rig: Rig, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    from contentshare.ui.dialogs import AddFolderDialog, CandidateDialog
+
+    name = "Amber Step 4 English 31-oct-2026"
+    (rig.world.storage / "Weekly" / name).mkdir(parents=True)
+    (rig.world.storage / "Weekly" / name / "a.mp4").write_bytes(b"x")
+    rig.world.index.scan_all([str(rig.world.storage)])
+    rig.mail(
+        message_id="x45", subject="Content request",
+        body=f"{name}\nAlso need the Silver Bay Sunday recording",
+    )  # fmt: skip
+    (card,) = rig.cards()
+    assert "Also need the Silver Bay Sunday recording" in card._unsearched_lines()
+    assert any(b.text() == "Add a folder…" for b in card.findChildren(QPushButton))
+    shown: dict[str, Any] = {}
+
+    def ask(self: AddFolderDialog) -> QDialog.DialogCode:
+        assert self.lines is not None
+        shown["lines"] = [self.lines.item(i).text() for i in range(self.lines.count())]
+        self.lines.setCurrentRow(0)  # click the first unsearched line
+        return QDialog.DialogCode.Accepted
+
+    def search(self: CandidateDialog) -> QDialog.DialogCode:
+        shown["searched"] = self.query.text()
+        return QDialog.DialogCode.Rejected  # nothing chosen
+
+    monkeypatch.setattr(AddFolderDialog, "exec", ask)
+    monkeypatch.setattr(CandidateDialog, "exec", search)
+    before = len(rig.controller.views())
+    card._add_folder()
+    assert shown["lines"] and shown["searched"] == shown["lines"][0]
+    assert len(rig.controller.views()) == before  # not chosen: no empty line is left behind

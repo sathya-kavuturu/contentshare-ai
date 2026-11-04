@@ -480,3 +480,73 @@ def test_a_clean_list_has_no_unsearched_warning(h: Harness) -> None:  # noqa: F8
     _exact(h)
     h.mail(message_id="x42", subject="Content request", body="\n".join(_THREE[:2]))
     assert not any("not searched" in w for v in h.ctl.views() for w in v.warnings)
+
+
+def test_a_quoted_reply_header_is_not_listed_as_an_unsearched_line(h: Harness) -> None:  # noqa: F811
+    _make_two_of_three(h)
+    _exact(h)
+    body = (
+        f"{_THREE[0]}\nOnline Coral Harbor Sessions Pack v001\n\n"
+        "On Wed, Nov 4, 2026 at 3:59 PM Asha Verma"
+    )
+    h.mail(message_id="x43", subject="Content request", body=body)
+    text = " ".join(w for v in h.ctl.views() for w in v.warnings)
+    assert "Coral Harbor" in text and "3:59 PM" not in text and "Asha" not in text
+
+
+def _email_with_an_unsearched_line(h: Harness) -> int:  # noqa: F811
+    _make_two_of_three(h)
+    (h.world.storage / "Weekly" / "Silver Bay Sunday").mkdir(parents=True)
+    (h.world.storage / "Weekly" / "Silver Bay Sunday" / "a.mp4").write_bytes(b"x")
+    h.world.index.scan_all([str(h.world.storage)])
+    _exact(h)
+    body = f"{_THREE[0]}\nAlso need the Silver Bay Sunday recording"
+    h.mail(message_id="x44", subject="Content request", body=body)
+    return h.ctl.views()[0].email_id
+
+
+def test_a_folder_can_be_added_to_the_same_request(h: Harness) -> None:  # noqa: F811
+    email_id = _email_with_an_unsearched_line(h)
+    before = len(h.ctl.group(email_id).items)
+    new_id = h.ctl.add_folder(email_id, "  Silver Bay   Sunday ")
+    group = h.ctl.group(email_id)
+    assert len(group.items) == before + 1  # the same card, one more section
+    added = h.ctl.view(new_id)
+    assert added.state == "NEEDS_REVIEW" and added.requested == "Silver Bay Sunday"
+    (hit,) = [c for c in h.ctl.search(new_id, "Silver Bay Sunday") if c.item_id is not None][:1]
+    h.ctl.choose(new_id, hit.item_id)  # type: ignore[arg-type]
+    chosen = h.ctl.view(new_id)
+    assert chosen.state == "READY" and (chosen.source_path or "").endswith("Silver Bay Sunday")
+    assert chosen.department == h.ctl.view(group.items[0].id).department
+    entries = [e["actor"] for e in h.ctl.audit(new_id) if e["event"] == "state_changed"]
+    assert h.ctl.user_name in entries  # the person who added it is on record
+
+
+def test_an_added_folder_that_is_not_chosen_is_taken_away_again(h: Harness) -> None:  # noqa: F811
+    from contentshare.app.controller import ActionError
+
+    email_id = _email_with_an_unsearched_line(h)
+    before = len(h.ctl.group(email_id).items)
+    new_id = h.ctl.add_folder(email_id, "Something else")
+    h.ctl.discard_added_folder(new_id)
+    assert len(h.ctl.group(email_id).items) == before
+    with pytest.raises(ActionError):
+        h.ctl.add_folder(email_id, "   ")
+    first = h.ctl.group(email_id).items[0].id
+    h.ctl.discard_added_folder(first)  # a line from the email itself is never discarded
+    assert len(h.ctl.group(email_id).items) == before
+
+
+def test_a_folder_can_still_be_added_after_the_copy_and_gets_its_own_reply(
+    h: Harness,  # noqa: F811
+) -> None:
+    email_id = _email_with_an_unsearched_line(h)
+    ready = h.ctl.group(email_id).in_states({"READY"})[0]
+    h.ctl.approve(ready.id, confirmed=True)
+    h.wait_copy(ready.id)
+    assert h.ctl.view(ready.id).state == "VERIFIED"
+    new_id = h.ctl.add_folder(email_id, "Silver Bay Sunday")  # the email is already copied
+    (hit,) = [c for c in h.ctl.search(new_id, "Silver Bay Sunday") if c.item_id is not None][:1]
+    h.ctl.choose(new_id, hit.item_id)  # type: ignore[arg-type]
+    assert h.ctl.view(new_id).state == "READY"
+    assert h.ctl.view(ready.id).state == "VERIFIED"  # the finished folder is not touched

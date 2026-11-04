@@ -160,6 +160,17 @@ MIGRATIONS: list[str] = [
     """
     CREATE INDEX idx_content_name ON content_items(name COLLATE NOCASE, kind);
     """,
+    # --- v6: the people who use the app (a name and a salted password hash each) ---
+    """
+    CREATE TABLE users (
+        id         INTEGER PRIMARY KEY,
+        name       TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        salt       TEXT NOT NULL,
+        pw_hash    TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        last_login TEXT
+    );
+    """,
 ]
 
 

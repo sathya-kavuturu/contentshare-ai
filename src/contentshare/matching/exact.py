@@ -109,6 +109,8 @@ _CHATTER = re.compile(
     r"best|sincerely|with love|pranams|good (?:morning|afternoon|evening))\b",
     re.IGNORECASE,
 )
+# "On Wed, Nov 4, 2026 at 3:59 PM Some Name" (the start of a quoted reply)
+_QUOTE_HEADER = re.compile(r"^on\s+.{3,120}\d{1,2}:\d{2}", re.IGNORECASE)
 
 
 def unread_lines(body: str, covered: list[str]) -> list[str]:
@@ -121,7 +123,12 @@ def unread_lines(body: str, covered: list[str]) -> list[str]:
         bullet = _BULLET.match(line)
         raw = bullet[1] if bullet else line
         text = _tidy(raw)
-        if len(text) < 8 or raw.rstrip().endswith(":") or _CHATTER.match(text):
+        if (
+            len(text) < 8
+            or raw.rstrip().endswith(":")
+            or _CHATTER.match(text)
+            or _QUOTE_HEADER.match(text)
+        ):
             continue
         if any(d in text.casefold() for d in done) or text in out:
             continue

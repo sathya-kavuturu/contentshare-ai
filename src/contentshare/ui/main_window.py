@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from contentshare.app.controller import ActionError, Controller, Event
+from contentshare.app.controller import Controller, Event
 from contentshare.app.notifications import Toast, for_check, for_event
 from contentshare.app.scheduler import Due
 from contentshare.app.startup import StartAtLogin
@@ -29,7 +29,7 @@ from contentshare.ui.automation import Automation
 from contentshare.ui.bridge import Bridge
 from contentshare.ui.context import UiContext
 from contentshare.ui.copies_page import CopiesPage
-from contentshare.ui.dialogs import UserNameDialog
+from contentshare.ui.dialogs import LoginDialog
 from contentshare.ui.help_page import HelpPage
 from contentshare.ui.history_page import HistoryPage
 from contentshare.ui.icons import app_icon
@@ -39,6 +39,7 @@ from contentshare.ui.settings_page import SettingsPage
 from contentshare.ui.theme import apply_theme, theme_for
 from contentshare.ui.tray import Tray
 from contentshare.ui.update_card import UpdateCard
+from contentshare.ui.widgets import BurgerButton
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
@@ -81,11 +82,11 @@ class MainWindow(QMainWindow):
         automation: Automation | None = None,
         startup: StartAtLogin | None = None,
         updater: Updater | None = None,
-        ask_name: bool = False,
+        ask_login: bool = False,
     ) -> None:
         super().__init__()
         self.controller, self.bridge = controller, bridge
-        self._ask_name_on_open = ask_name  # the real app asks who is using it; tests do not
+        self._ask_login_on_open = ask_login  # the real app asks who is using it; tests do not
         self.tray, self.automation = tray, automation
         self._quitting = False
         self._told_about_tray = False
@@ -126,6 +127,7 @@ class MainWindow(QMainWindow):
         self._connect_services()
         self.statusBar().showMessage("Ready")
         self.update_chrome()
+        self.nav.setFocus()  # not the menu icon: it would start with a ring around it
 
     # ------------------------------------------------------------------ the menu on the left
     def _build_sidebar(self, updater: Updater | None) -> None:
@@ -134,12 +136,8 @@ class MainWindow(QMainWindow):
         side_layout = QVBoxLayout(self.side)
         side_layout.setContentsMargins(0, 0, 0, 14)
         side_layout.setSpacing(4)
-        # the fold button at the very top (the menu icon): same as the one at the bottom
-        self.top_toggle = QPushButton("☰")
-        self.top_toggle.setFlat(True)
-        self.top_toggle.setFixedSize(36, 32)
-        self.top_toggle.setFocusPolicy(Qt.FocusPolicy.TabFocus)  # no ring after a mouse click
-        self.top_toggle.setStyleSheet("font-size: 18px;")
+        # the menu icon at the very top folds the menu to icons and opens it again
+        self.top_toggle = BurgerButton()
         self.top_toggle.clicked.connect(lambda _c=False: self.toggle_sidebar())
         top_row = QHBoxLayout()
         top_row.setContentsMargins(16, 10, 12, 0)
@@ -157,18 +155,11 @@ class MainWindow(QMainWindow):
         # who is using the app (click to change it): shown in the History beside approvals
         self.user_button = QPushButton()
         self.user_button.setFlat(True)
-        self.user_button.clicked.connect(lambda _c=False: self.ask_user_name())
+        self.user_button.clicked.connect(lambda _c=False: self.switch_user())
         user_row = QHBoxLayout()
         user_row.setContentsMargins(12, 0, 12, 0)
         user_row.addWidget(self.user_button)
         side_layout.addLayout(user_row)
-        self.side_toggle = QPushButton()
-        self.side_toggle.setFlat(True)
-        self.side_toggle.clicked.connect(lambda _c=False: self.toggle_sidebar())
-        fold_row = QHBoxLayout()
-        fold_row.setContentsMargins(12, 0, 12, 0)
-        fold_row.addWidget(self.side_toggle)
-        side_layout.addLayout(fold_row)
         # Bottom left: "a new version is available" (only when an updater was given). It lives in
         # a holder so the whole box can be put away while the menu is folded.
         self._update_holder = QWidget()
@@ -194,44 +185,44 @@ class MainWindow(QMainWindow):
             self._brand_row.setContentsMargins(*((20, 8, 20, 14) if collapsed else (20, 8, 16, 14)))
         self.nav.set_collapsed(collapsed)
         self._update_holder.setVisible(not collapsed)
-        self.side_toggle.setText("»" if collapsed else "«   Fold menu")
-        self.side_toggle.setToolTip(
-            "Show the menu names" if collapsed else "Fold the menu to icons"
-        )
-        self.side_toggle.setAccessibleName("Show the menu" if collapsed else "Fold the menu")
+        tip = "Show the menu names" if collapsed else "Fold the menu to icons"
+        self.top_toggle.setToolTip(tip)
+        self.top_toggle.setAccessibleName("Show the menu" if collapsed else "Fold the menu")
         self.refresh_user_button()
-        self.top_toggle.setToolTip(self.side_toggle.toolTip())
-        self.top_toggle.setAccessibleName(self.side_toggle.accessibleName())
         if remember:
             with contextlib.suppress(OSError, ValueError):  # only "remember it" can fail
                 self.controller.set_ui_option("sidebar_collapsed", collapsed)
 
     # ------------------------------------------------------------------ who is using the app
     def refresh_user_button(self) -> None:
-        name = self.controller.config.user_name
-        self.user_button.setText(
-            "👤" if self._sidebar_collapsed else f"👤  {name or 'Who are you?'}"
-        )
-        tip = f"Using ContentShare as {name}. Click to change." if name else "Type your name"
+        name = self.controller.user_name if self.controller.signed_in else ""
+        self.user_button.setText("👤" if self._sidebar_collapsed else f"👤  {name or 'Sign in'}")
+        tip = f"Signed in as {name}. Click to switch user." if name else "Sign in"
         self.user_button.setToolTip(tip)
-        self.user_button.setAccessibleName(f"User: {name or 'not set'}. Change")
+        self.user_button.setAccessibleName(f"User: {name or 'not signed in'}. Switch user")
 
-    def ask_user_name(self) -> bool:
-        """Ask who is using the app. True when a name is now saved."""
-        dialog = UserNameDialog(self.controller.config.user_name, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            try:
-                self.controller.set_user_name(dialog.value())
-            except (ActionError, OSError, ValueError) as exc:
-                QMessageBox.warning(self, "Could not save the name", str(exc))
+    def start_sign_in(self) -> bool:
+        """The box asked each time the app is opened. Closing it without signing in quits."""
+        self.controller.login_required = True
+        dialog = LoginDialog(self.controller, self)
+        signed_in = dialog.exec() == QDialog.DialogCode.Accepted
         self.refresh_user_button()
-        return bool(self.controller.config.user_name)
+        if not signed_in:
+            self.quit_app()
+        return signed_in
+
+    def switch_user(self) -> bool:
+        """Sign in as someone else. Cancel keeps the person who is signed in."""
+        dialog = LoginDialog(self.controller, self, can_cancel=True)
+        switched = dialog.exec() == QDialog.DialogCode.Accepted
+        self.refresh_user_button()
+        return switched
 
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 (Qt name)
         super().showEvent(event)
-        if self._ask_name_on_open:
-            self._ask_name_on_open = False  # once per start, when the window first appears
-            QTimer.singleShot(0, self.ask_user_name)
+        if self._ask_login_on_open:
+            self._ask_login_on_open = False  # once per start, when the window first appears
+            QTimer.singleShot(0, self.start_sign_in)
 
     def _add_update_card(self, layout: QVBoxLayout, updater: Updater | None) -> UpdateCard | None:
         if updater is None:

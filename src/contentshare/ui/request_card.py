@@ -37,6 +37,7 @@ from contentshare.copy_engine import format_bytes
 from contentshare.gmail.replies import ReplyResult
 from contentshare.ui.context import UiContext
 from contentshare.ui.dialogs import (
+    AddFolderDialog,
     CandidateDialog,
     DestinationDialog,
     RejectDialog,
@@ -486,6 +487,7 @@ class RequestCard(QFrame):
             buttons.append(_button(verb, self._approve, primary=True))
         if verified:
             buttons.append(_button("Preview and send reply…", self._reply, primary=not ready))
+        buttons.append(_button("Add a folder…", self._add_folder))  # on every card, always
         if group.in_states(_CAN_SKIP):
             buttons.append(_button("Skip all" if group.many else "Skip", self._skip))
         if group.in_states(_CAN_REJECT):
@@ -541,6 +543,41 @@ class RequestCard(QFrame):
             self.ctx.fail(self._owner(), title, exc)
 
         return handler
+
+    # ------------------------------------------------------------------ add a folder to the email
+    def _unsearched_lines(self) -> list[str]:
+        """The lines named in the card's "not searched" note."""
+        lines: list[str] = []
+        for item in self.group.items:
+            for warning in item.warnings:
+                if "were not searched" in warning:
+                    found = re.findall("“([^”]+)”", warning)
+                    lines += [t for t in found if t not in lines]
+        return lines
+
+    def _add_folder(self) -> None:
+        ask = AddFolderDialog(self._unsearched_lines(), self)
+        if not ask.exec():
+            return
+        controller = self.ctx.controller
+        try:
+            request_id = controller.add_folder(self.group.email_id, ask.value())
+            view = controller.view(request_id)
+        except Exception as exc:
+            self.ctx.fail(self, "Cannot add this folder", exc)
+            return
+        dialog = CandidateDialog(controller, view, self, start_text=ask.value())
+        if dialog.exec():
+            if dialog.chosen_path is not None:
+                self._choose_path(view, dialog.chosen_path)
+                return
+            if dialog.chosen is not None and dialog.chosen.item_id is not None:
+                self._choose(view, dialog.chosen.item_id)
+                return
+        try:
+            controller.discard_added_folder(request_id)  # nothing chosen: no empty line is left
+        except Exception as exc:
+            self.ctx.fail(self, "Cannot add this folder", exc)
 
     # ------------------------------------------------------------------ actions on one folder
     def _search_manually(self, view: RequestView) -> None:

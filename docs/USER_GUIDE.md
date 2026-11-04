@@ -85,7 +85,13 @@ says "not found", so a folder made this morning is found.
   *No folder named … was found*. Press **Search manually…** to find it yourself.
 * Any other line of the email that did **not** become a request is listed in a yellow note at the
   top of the card: **These lines of the email were not searched**. Read it, and compare with the
-  email if something looks missing. Greetings and thanks are not listed.
+  email if something looks missing. Greetings, thanks and the "On … wrote" line of a quoted reply
+  are not listed.
+* To add one of those lines, or any other folder, to the same request, press **Add a folder…** on
+  the card. Click a listed line or type the name, then choose the folder on the server. It becomes
+  one more numbered section of the same card, and the same single reply covers it. The button is
+  on every card, also for a request that was already copied: the new folder is copied and
+  checked on its own.
 * **Show text** shows the start of the email on the card.
 
 ### Copy a request
@@ -138,8 +144,22 @@ search box and the status filter to find a request. **Export CSV** saves the lis
 **Approved by** column shows the name of the person who approved it (a dash for older requests),
 and **Copy time** shows how long each copy took.
 
-ContentShare asks **Who is using ContentShare?** every time it opens. Type your name; the last one
-is already filled in. To change it later, click the name button in the menu on the left.
+### Signing in
+
+![The sign-in box](screenshots/login.png)
+
+Every time ContentShare opens it asks you to sign in, so the History can show who approved what.
+
+* **Choose your name** (the last person is already selected) and **type your password**.
+* **New here?** Press **Create a new user…**, type a name and a password twice, and you are in.
+  The password can be anything, even one letter or number; it only has to be typed the same way
+  next time.
+* Press the name button in the menu on the left to sign in as someone else without closing the
+  app. **Quit ContentShare** in the box closes the app instead.
+* Forgot a password? There is no recovery: create a new user. The old name stays in the History.
+
+This tells people apart. It is not strong protection: anyone who can open the program's files on
+this PC could get around it.
 
 ## 8. Settings
 
@@ -188,8 +208,7 @@ Every setting is explained in **Help → Settings explained**.
 
 ![The menu folded to icons](screenshots/menu-folded.png)
 
-* **Fold the menu** with the **☰** icon at the top of the menu (or **« Fold menu** at the
-  bottom). It leaves only icons. Press **☰** again to open it. The choice is remembered.
+* **Fold the menu** with the **☰** icon at the top of the menu. It leaves only icons. Press **☰** again to open it. The choice is remembered.
 * **Help** (in the menu) explains how to connect Gmail, how to use each screen, and what every
   setting does. It is part of the program and works offline.
 * When ContentShare starts it looks for a newer version. If one exists, a box appears at the

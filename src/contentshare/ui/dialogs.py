@@ -27,6 +27,7 @@ from contentshare.app.controller import ActionError, CandidateView, Controller, 
 from contentshare.copy_engine import format_bytes
 from contentshare.gmail.replies import ReplyDraft
 from contentshare.ui.status import confidence_dots
+from contentshare.ui.widgets import Combo
 from contentshare.ui.widgets import Label as QLabel
 
 log = logging.getLogger(__name__)
@@ -51,7 +52,14 @@ class CandidateDialog(QDialog):
     _pc_looked = Signal(int)  # folders looked at so far (from the search thread)
     _pc_finished = Signal(object, bool, str)  # (matches, whole PC covered, problem)
 
-    def __init__(self, controller: Controller, view: RequestView, parent: QWidget | None = None):
+    def __init__(  # noqa: PLR0915 (one dialog, built top to bottom)
+        self,
+        controller: Controller,
+        view: RequestView,
+        parent: QWidget | None = None,
+        *,
+        start_text: str = "",
+    ):
         super().__init__(parent)
         self.setWindowTitle(f"Choose content for request #{view.id}")
         self.resize(760, 480)
@@ -99,7 +107,10 @@ class CandidateDialog(QDialog):
         layout.addWidget(self.hint)
         layout.addWidget(_buttons(self, "Use selected content"))
         self._show(list(view.candidates), "Suggestions from the email. Search to look for others.")
-        if self._pc_allowed and not view.candidates:
+        if start_text:
+            self.query.setText(start_text)
+            self._search()  # a folder added by name: look for it at once
+        elif self._pc_allowed and not view.candidates:
             self._start_pc_search()  # nothing in the department's folders: look further
 
     def _search(self) -> None:
@@ -343,45 +354,157 @@ class RejectDialog(QDialog):
         return self.reason.text().strip(), self.notify.isChecked(), self.text.toPlainText().strip()
 
 
-class UserNameDialog(QDialog):
-    """Asked when the app is opened: who is using it. The name is kept in the History beside
-    what this person approves. It cannot be left empty."""
+class LoginDialog(QDialog):
+    """Asked every time the app is opened: choose who you are and type your password, or create
+    a new user. The History shows the name beside every request that person approves.
 
-    def __init__(self, current: str = "", parent: QWidget | None = None):
+    A password can be anything. This tells people apart; it is not strong protection (see
+    ``contentshare.app.users``)."""
+
+    def __init__(  # noqa: PLR0915 (one dialog, built top to bottom)
+        self, controller: Controller, parent: QWidget | None = None, *, can_cancel: bool = False
+    ):
         super().__init__(parent)
-        self.setWindowTitle("Who is using ContentShare?")
-        self.resize(460, 190)
-        self._had_name = bool(current)
+        self._controller = controller
+        self._creating = False
+        self.setWindowTitle("Sign in to ContentShare")
+        self.resize(440, 240)
+        users = controller.user_names()
         layout = QVBoxLayout(self)
-        layout.addWidget(
-            QLabel(
-                "Type your name. The History shows it beside every request you approve, "
-                "so the team can see who did what."
-            )
+        self.intro = QLabel("Choose your name and type your password.")
+        self.intro.setWordWrap(True)
+        layout.addWidget(self.intro)
+
+        form = QFormLayout()
+        self.user = Combo()
+        self.user.setAccessibleName("User")
+        for name in users:
+            self.user.addItem(name)
+        last = self.user.findText(controller.last_user())
+        if last >= 0:
+            self.user.setCurrentIndex(last)
+        self.password = QLineEdit(echoMode=QLineEdit.EchoMode.Password)
+        self.password.setAccessibleName("Password")
+        self.new_name = QLineEdit(placeholderText="Your name")
+        self.new_name.setAccessibleName("New user name")
+        self.new_name.setMaxLength(40)
+        self.new_password = QLineEdit(echoMode=QLineEdit.EchoMode.Password)
+        self.new_password.setAccessibleName("New password")
+        self.repeat = QLineEdit(echoMode=QLineEdit.EchoMode.Password)
+        self.repeat.setAccessibleName("Type the new password again")
+        form.addRow("User:", self.user)
+        form.addRow("Password:", self.password)
+        form.addRow("Name:", self.new_name)
+        form.addRow("Password:", self.new_password)
+        form.addRow("Again:", self.repeat)
+        self._form = form
+        layout.addLayout(form)
+
+        self.message = QLabel()
+        self.message.setObjectName("banner")
+        self.message.setWordWrap(True)
+        self.message.setVisible(False)
+        layout.addWidget(self.message)
+        layout.addStretch(1)
+
+        row = QHBoxLayout()
+        self.switch = QPushButton()
+        self.switch.setFlat(True)
+        self.switch.clicked.connect(lambda _c=False: self._show_create(not self._creating))
+        row.addWidget(self.switch)
+        row.addStretch(1)
+        self.cancel = QPushButton("Cancel" if can_cancel else "Quit ContentShare")
+        self.cancel.clicked.connect(self.reject)
+        self.ok = QPushButton()
+        self.ok.setProperty("primary", True)
+        self.ok.setDefault(True)
+        self.ok.clicked.connect(self.accept)
+        row.addWidget(self.cancel)
+        row.addWidget(self.ok)
+        layout.addLayout(row)
+        for field in (self.password, self.new_name, self.new_password, self.repeat):
+            field.returnPressed.connect(self.accept)
+        self._show_create(not users)
+        (self.new_name if not users else self.password).setFocus()
+
+    def _show_create(self, creating: bool) -> None:
+        self._creating = creating
+        for field in (self.user, self.password):
+            self._form.setRowVisible(field, not creating)
+        for field in (self.new_name, self.new_password, self.repeat):
+            self._form.setRowVisible(field, creating)
+        has_users = self.user.count() > 0
+        self.intro.setText(
+            "Create a user. Any password will do; you type it each time the app opens."
+            if creating
+            else "Choose your name and type your password."
         )
-        self.name = QLineEdit(current, placeholderText="Your name")
-        self.name.setAccessibleName("Your name")
-        self.name.setMaxLength(40)
+        self.switch.setText("Back to sign in" if creating else "Create a new user…")
+        self.switch.setVisible(has_users or not creating)
+        self.ok.setText("Create user and sign in" if creating else "Sign in")
+        self.message.setVisible(False)
+        (self.new_name if creating else self.password).setFocus()
+
+    def _fail(self, text: str) -> None:
+        self.message.setText(text)
+        self.message.setVisible(True)
+
+    def accept(self) -> None:
+        try:
+            if self._creating:
+                if self.new_password.text() != self.repeat.text():
+                    self._fail("The two passwords are not the same")
+                    return
+                self._controller.create_user(self.new_name.text(), self.new_password.text())
+            else:
+                self._controller.sign_in(self.user.currentText(), self.password.text())
+        except ActionError as exc:
+            self._fail(str(exc))
+            self.password.clear()
+            return
+        super().accept()
+
+
+class AddFolderDialog(QDialog):
+    """Name one more folder for the same email. The lines of the email that were not searched are
+    listed: click one to use it as the name."""
+
+    def __init__(self, lines: list[str], parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("Add a folder to this request")
+        self.resize(560, 320 if lines else 170)
+        layout = QVBoxLayout(self)
+        intro = QLabel("Type the name of the folder to add. You then choose it on the server.")
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+        self.name = QLineEdit(placeholderText="Folder name")
+        self.name.setAccessibleName("Folder name")
+        self.name.setMaxLength(200)
+        self.name.returnPressed.connect(self.accept)
+        self.lines: QListWidget | None = None
+        if lines:
+            layout.addWidget(QLabel("Lines of the email that were not searched (click one):"))
+            self.lines = QListWidget()
+            self.lines.setAccessibleName("Lines of the email that were not searched")
+            for line in lines:
+                self.lines.addItem(line)
+            self.lines.currentTextChanged.connect(self._use_line)
+            layout.addWidget(self.lines, 1)
         layout.addWidget(self.name)
-        self._box = _buttons(self, "Continue")
-        self._ok = self._box.buttons()[0]
-        self._keep = self._box.buttons()[1]
-        self._keep.setVisible(self._had_name)
+        self._box = _buttons(self, "Search for it")
         layout.addWidget(self._box)
         self.name.textChanged.connect(self._check)
-        self.name.returnPressed.connect(self.accept)
         self._check()
 
+    def _use_line(self, text: str) -> None:
+        if text:
+            self.name.setText(text)
+
     def _check(self) -> None:
-        self._ok.setEnabled(bool(self.name.text().strip()))
+        self._box.buttons()[0].setEnabled(bool(self.name.text().strip()))
 
     def value(self) -> str:
         return self.name.text().strip()
-
-    def reject(self) -> None:
-        """Escape or the close button: fine when a name is already saved, ignored otherwise."""
-        if self._had_name:
-            super().reject()
 
     def accept(self) -> None:
         if self.value():

@@ -599,7 +599,7 @@ def test_copy_speed_text_is_the_average_over_the_whole_job(h: Harness) -> None:
 
 # --------------------------------------------------------------------------- who approved
 def test_history_says_who_approved_the_request(h: Harness, tmp_path: Path) -> None:
-    h.ctl.set_user_name("asha")
+    h.ctl.create_user("asha", "pw")
     v = h.ready()
     assert v.approved_by == ""
     h.ctl.approve(v.id, confirmed=True)
@@ -615,22 +615,59 @@ def test_history_says_who_approved_the_request(h: Harness, tmp_path: Path) -> No
 
 
 def test_a_dry_run_check_is_also_attributed(h: Harness) -> None:
-    h.ctl.set_user_name("ravi")
+    h.ctl.create_user("ravi", "x")
     h.ctl.apply_config(h.ctl.config.model_copy(update={"dry_run": True}))
     v = h.ready()
     h.ctl.approve(v.id, confirmed=True)
     assert h.ctl.view(v.id).approved_by == "ravi"
 
 
-def test_the_name_typed_at_start_is_cleaned_and_remembered(h: Harness) -> None:
+# --------------------------------------------------------------------------- users and passwords
+def test_users_sign_in_with_any_password_and_are_told_apart(h: Harness) -> None:
     from contentshare.app.controller import ActionError, clean_user_name
 
-    assert h.ctl.user_name == "user"  # nobody has typed a name yet
+    assert h.ctl.user_name == "user" and not h.ctl.signed_in  # nobody yet
     assert clean_user_name("  Asha " + chr(9) + "  Rao" + chr(10)) == "Asha Rao"
     assert clean_user_name("x" * 100) == "x" * 40
+    assert h.ctl.create_user("  Meera  K ", "a") == "Meera K"  # a one-letter password is fine
+    assert h.ctl.signed_in and h.ctl.user_name == "Meera K"
+    h.ctl.sign_out()
+    assert not h.ctl.signed_in
     with pytest.raises(ActionError):
-        h.ctl.set_user_name("   ")
-    assert h.ctl.set_user_name("  Meera  K ") == "Meera K"
-    assert h.ctl.user_name == "Meera K"
-    reloaded = load_config(h.ctl._config_path)  # type: ignore[arg-type]
-    assert reloaded.user_name == "Meera K"
+        h.ctl.sign_in("Meera K", "wrong")
+    with pytest.raises(ActionError):
+        h.ctl.sign_in("Nobody", "a")
+    assert h.ctl.sign_in("meera k", "a") == "Meera K"  # capitals do not matter in the name
+    for name, password in (("   ", "x"), ("Ravi", "")):
+        with pytest.raises(ActionError):
+            h.ctl.create_user(name, password)
+    with pytest.raises(ActionError):
+        h.ctl.create_user("MEERA K", "other")  # the name is taken
+    assert h.ctl.user_names() == ["Meera K"]
+    assert h.ctl.last_user() == "Meera K"
+    assert load_config(h.ctl._config_path).user_name == "Meera K"  # type: ignore[arg-type]
+
+
+def test_passwords_are_stored_as_salted_hashes_never_as_typed(h: Harness) -> None:
+    h.ctl.create_user("Asha", "secret-word")
+    h.ctl.create_user("Ravi", "secret-word")
+    rows = [h.ctl.repo.get_user(n) for n in ("Asha", "Ravi")]
+    assert all(r and "secret-word" not in str(r) for r in rows)
+    assert rows[0]["pw_hash"] != rows[1]["pw_hash"]  # a different salt each
+    trail = str(h.ctl.repo.audit_entries())
+    assert "secret-word" not in trail
+
+
+def test_nothing_is_done_before_signing_in_when_the_app_requires_it(h: Harness) -> None:
+    from contentshare.app.controller import ActionError
+
+    v = h.ready()
+    h.ctl.login_required = True
+    with pytest.raises(ActionError, match="Sign in"):
+        h.ctl.approve(v.id, confirmed=True)
+    with pytest.raises(ActionError, match="Sign in"):
+        h.ctl.skip(v.id)
+    h.ctl.create_user("Asha", "pw")
+    h.ctl.approve(v.id, confirmed=True)  # signed in: allowed
+    h.wait_copy(v.id)
+    assert h.ctl.view(v.id).approved_by == "Asha"

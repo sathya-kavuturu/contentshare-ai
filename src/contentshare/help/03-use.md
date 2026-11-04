@@ -31,7 +31,7 @@ to open it. **Collapse all** at the top of the list folds every request, and the
 reads **Expand all**. Folding only changes what you see: ticks you made stay, and new requests
 that arrive later follow the last choice. The choice is remembered for next time.
 
-The menu on the left can be folded too: the **☰** icon at its top (or **« Fold menu** at its bottom) leaves just the icons (hover
+The menu on the left can be folded too: the **☰** icon at its top leaves just the icons (hover
 one for its name; the number on the Requests icon is how many are waiting), and **»** brings the
 names back. If an update is found while it is folded, it opens so you can see the update box.
 
@@ -40,7 +40,7 @@ names back. If an update is found while it is folded, it opens so you can see th
 
 A department set to **exact folder names** (Settings → Departments) shows each folder name from the email that was found on the storage server as **Ready**. A name with several folders of that name, or no folder at all, is **Needs review**, and you can browse for the folder yourself.
 
-Lines of the email that no request was made from are listed on the card under **These lines of the email were not searched**, so compare it with the email if something seems missing. **Show text** on the card shows the start of the email.
+Lines of the email that no request was made from are listed on the card under **These lines of the email were not searched**, so compare it with the email if something seems missing. To search for one of them (or any other folder) in the same request, press **Add a folder…** on the card: click one of the listed lines or type a name, then choose the folder on the server. It becomes one more section of the same request and the same reply. The button is on every card, also for a request that was already copied: the new folder is copied and checked on its own. **Show text** on the card shows the start of the email.
 
 If a program is not found, press **Search manually…** and type part of its name, or press **Browse for a folder…** / **Browse for a file…** and pick it yourself on the storage server. What you pick must be inside one of the storage folders in *Settings* (it does not have to be in the index), unless the department has **Allow choosing from anywhere** switched on, in which case it can be anywhere. If a whole program is missing from every search result, refresh the index in *Settings → Index*.
 
@@ -71,10 +71,13 @@ dry-run mode nothing is sent.
 
 Every request with a step-by-step record of what happened. **Export CSV** saves it for Excel.
 
-When ContentShare opens it asks **Who is using ContentShare?** Type your name (the last name used is
-already filled in). The **Approved by** column shows that name beside each request you approve, so a team
-sharing the app can see who did what. The step-by-step record names the same person for every action they
-took. To change the name later, click the name button in the menu on the left. Older requests show a dash.
+Every time ContentShare opens it asks you to **sign in**: choose your name (the last user is already
+selected) and type your password, or press **Create a new user…** and type a name and a password twice. Any
+password will do. The **Approved by** column shows who approved each request, so a team sharing the app can see
+who did what, and the step-by-step record names the same person for every action they took. To sign in as
+someone else, click the name button in the menu on the left. **Quit ContentShare** in the box closes the app.
+If you forget a password, create a new user. This tells people apart; it is not strong protection. Older
+requests show a dash.
 
 The **Copy time** column shows how long the last copy of each request took, from the first file to the last
 check (for example `2 min 05 s`). Select a request to also see its average speed. That speed counts the

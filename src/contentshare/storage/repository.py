@@ -105,6 +105,36 @@ class Repository:
         with self.db.read() as conn:
             return [dict(r) for r in conn.execute(sql + " ORDER BY id", args)]
 
+    # --- users -----------------------------------------------------------------
+    def add_user(self, name: str, salt: str, pw_hash: str) -> bool:
+        """Add a user. False if that name (capitals do not matter) is taken."""
+        try:
+            with self.db.transaction() as conn:
+                conn.execute(
+                    "INSERT INTO users (name, salt, pw_hash, created_at) VALUES (?, ?, ?, ?)",
+                    (name, salt, pw_hash, _now()),
+                )
+                self._audit(conn, name, "user_created", None, {})
+        except sqlite3.IntegrityError:
+            return False
+        return True
+
+    def get_user(self, name: str) -> dict[str, Any] | None:
+        with self.db.read() as conn:
+            return _row(conn.execute("SELECT * FROM users WHERE name = ?", (name,)).fetchone())
+
+    def list_user_names(self) -> list[str]:
+        with self.db.read() as conn:
+            return [
+                str(r["name"])
+                for r in conn.execute("SELECT name FROM users ORDER BY name COLLATE NOCASE")
+            ]
+
+    def touch_login(self, name: str) -> None:
+        with self.db.transaction() as conn:
+            conn.execute("UPDATE users SET last_login = ? WHERE name = ?", (_now(), name))
+            self._audit(conn, name, "signed_in", None, {})
+
     # --- emails ----------------------------------------------------------------
     def is_processed(self, gmail_message_id: str) -> bool:
         with self.db.read() as conn:
@@ -200,6 +230,22 @@ class Repository:
     def get_request(self, request_id: int) -> dict[str, Any] | None:
         with self.db.read() as conn:
             return _row(conn.execute(_REQUEST_SELECT + " WHERE r.id = ?", (request_id,)).fetchone())
+
+    def delete_unused_request(self, request_id: int, *, actor: str) -> bool:
+        """Remove a line that nothing happened to (no copy, no reply). Used when a folder was
+        added to an email and then not chosen. The audit trail keeps its entries."""
+        with self.db.transaction() as conn:
+            used = conn.execute(
+                "SELECT (SELECT COUNT(*) FROM jobs WHERE request_id = ?) + "
+                "(SELECT COUNT(*) FROM replies WHERE request_id = ?)",
+                (request_id, request_id),
+            ).fetchone()[0]
+            if used:
+                return False
+            cur = conn.execute("DELETE FROM requests WHERE id = ?", (request_id,))
+            if cur.rowcount:
+                self._audit(conn, actor, "line_discarded", request_id, {})
+            return bool(cur.rowcount)
 
     def requests_of_email(self, email_id: int) -> list[dict[str, Any]]:
         """Every line of one email, in the order they were asked for."""

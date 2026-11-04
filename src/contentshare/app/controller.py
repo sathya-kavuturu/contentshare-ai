@@ -24,6 +24,8 @@ from pathlib import Path
 from typing import Any
 
 from contentshare.app.telegram import TelegramError, TelegramNotifier, alert_text
+from contentshare.app.users import UserError, UserStore
+from contentshare.app.users import clean_name as clean_user_name
 from contentshare.config.models import AppConfig, Department
 from contentshare.config.store import save_config
 from contentshare.copy_engine import (
@@ -62,11 +64,6 @@ log = logging.getLogger(__name__)
 COPY_OK = "Copied and verified"  # the message of a successful ``copy_finished`` event
 
 S = RequestState
-
-
-def clean_user_name(text: str) -> str:
-    """The name typed when the app is opened: one line, no control characters, at most 40."""
-    return " ".join("".join(c for c in text if c.isprintable()).split())[:40]
 
 
 GatewayFactory = Callable[[], GmailGateway]
@@ -343,6 +340,9 @@ class Controller:
         self.telegram = telegram or TelegramNotifier()  # touches nothing until an alert is sent
         self._gateway_factory, self.auth = gateway_factory, auth
         self._config_path, self._today = config_path, today
+        self.users = UserStore(repo)
+        self._signed_in: str | None = None
+        self.login_required = False  # the real app sets this: nothing is done before signing in
         self._live: dict[int, _Live] = {}
         self._lock = threading.Lock()
         self._check_lock = threading.Lock()
@@ -433,12 +433,58 @@ class Controller:
         )
 
     def _transition(self, request_id: int, target: RequestState, **kwargs: Any) -> None:
+        self._require_sign_in()
         try:
             self.repo.transition(request_id, target, actor=self.user_name, **kwargs)
         except InvalidTransitionError as exc:
             raise ActionError(str(exc)) from exc
         except PermissionError as exc:
             raise ActionError(str(exc)) from exc
+
+    def add_folder(self, email_id: int, text: str) -> int:
+        """Add a line to this email for a folder the person names (for example one the email
+        mentioned that was not searched). It starts as Needs review; the content is chosen
+        with the usual search. Always possible, also for an email that was already copied or
+        answered: the new line is copied and checked on its own, and a folder that is verified
+        after the reply was sent gets a short follow-up reply of its own. Returns the new
+        request's number."""
+        name = clean_user_name(text, limit=200)
+        if not name:
+            raise ActionError("Type the name of the folder")
+        email = self.repo.get_email(email_id)
+        if email is None:
+            raise ActionError("This request no longer exists")
+        if self._department_or_none(email.get("department")) is None:
+            raise ActionError("This sender's department is not in the settings; add it first")
+        number = max((r["line_no"] for r in self.repo.requests_of_email(email_id)), default=0) + 1
+        item = RequestItem(program=name, raw=name)
+        request_id = self.repo.add_request(
+            email_id, number, {"item": item.to_dict()}, auto_reply=self.config.auto_reply_default
+        )
+        detail = {
+            "item": item.to_dict(),
+            "reason": "Added by you: choose the folder to copy",
+            "candidates": [],
+            "warnings": [],
+            "added": True,
+        }
+        self._transition(
+            request_id, S.NEEDS_REVIEW, reason="folder added by the user",
+            query_json=json.dumps(detail),
+        )  # fmt: skip
+        self._emit("changed", request_id)
+        return request_id
+
+    def discard_added_folder(self, request_id: int) -> None:
+        """The person added a folder and then chose nothing: take the empty line away again."""
+        row = self._row(request_id)
+        try:
+            added = bool(json.loads(row.get("query_json") or "{}").get("added"))
+        except ValueError:
+            added = False
+        if added and row["state"] == S.NEEDS_REVIEW:
+            self.repo.delete_unused_request(request_id, actor=self.user_name)
+            self._emit("changed")
 
     def search(self, request_id: int, text: str) -> list[CandidateView]:
         """Manual search. The typed text is read like a request of its own (so typing a date or
@@ -703,6 +749,7 @@ class Controller:
     ) -> ApproveResult:
         """Approve a READY request and start copying. Re-checks the source on disk first.
         In dry-run mode everything is checked and reported but nothing changes."""
+        self._require_sign_in()
         if not confirmed:
             raise ActionError("Tick “Confirm copy” first: nothing is copied without it")
         row = self._row(request_id)
@@ -1001,6 +1048,7 @@ class Controller:
             raise ActionError(str(exc)) from exc
 
     def send_reply(self, draft: ReplyDraft) -> ReplyResult:
+        self._require_sign_in()
         if self.config.dry_run:
             raise ActionError("Dry-run mode is on: no email is sent. Turn it off to reply.")
         try:
@@ -1084,19 +1132,55 @@ class Controller:
         save_config(config, self._config_path)
         self.config = config
 
+    # ------------------------------------------------------------------ who is using the app
     @property
     def user_name(self) -> str:
-        """Who is using the app now: the name typed when it was opened. It goes in the History
-        beside what that person approves. "user" until a name has been given."""
-        return self.config.user_name or "user"
+        """The signed-in person. It goes in the History beside what they approve."""
+        return self._signed_in or "user"
 
-    def set_user_name(self, name: str) -> str:
-        """Remember who is using the app. Returns the name as stored."""
-        cleaned = clean_user_name(name)
-        if not cleaned:
-            raise ActionError("Type your name")
-        self.set_ui_option("user_name", cleaned)
-        return cleaned
+    @property
+    def signed_in(self) -> bool:
+        return self._signed_in is not None
+
+    def user_names(self) -> list[str]:
+        return self.users.names()
+
+    def last_user(self) -> str:
+        """The person who used the app last (chosen first in the sign-in box)."""
+        return self.config.user_name
+
+    def sign_in(self, name: str, password: str) -> str:
+        """Sign in with a name and password. Returns the name as stored."""
+        stored = self.users.verify(name, password)
+        if stored is None:
+            self.repo.log("system", "sign_in_failed")  # no name: a typo is not a record
+            raise ActionError("The name or the password is wrong")
+        self._signed_in = stored
+        self._remember_user(stored)
+        return stored
+
+    def create_user(self, name: str, password: str) -> str:
+        """Add a new user and sign in as them."""
+        try:
+            stored = self.users.create(name, password)
+        except UserError as exc:
+            raise ActionError(str(exc)) from exc
+        self._signed_in = stored
+        self._remember_user(stored)
+        return stored
+
+    def sign_out(self) -> None:
+        self._signed_in = None
+
+    def _remember_user(self, name: str) -> None:
+        try:
+            self.set_ui_option("user_name", name)
+        except (OSError, ValueError):
+            log.warning("could not remember the last user")
+
+    def _require_sign_in(self) -> None:
+        if self.login_required and self._signed_in is None:
+            raise ActionError("Sign in first")
 
     def set_appearance(self, appearance: str) -> None:
         self.set_ui_option("appearance", appearance)

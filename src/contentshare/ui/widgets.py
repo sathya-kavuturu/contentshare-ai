@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QFontMetrics, QPainter, QPaintEvent, QResizeEvent
+from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPaintEvent, QPen, QResizeEvent
 from PySide6.QtWidgets import (
     QComboBox,
     QLabel,
     QListView,
     QMessageBox,
+    QPushButton,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
+
+from contentshare.ui.theme import current_theme
 
 
 class Label(QLabel):
@@ -221,3 +224,40 @@ class StackBody(QWidget):
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt override
         super().resizeEvent(event)
         self.fit()
+
+
+class BurgerButton(QPushButton):
+    """The menu icon (three bars) that folds the menu on the left. It is drawn here, in the
+    theme's colours, so it is sharp at any scale and in both themes; a text glyph was small and
+    its box looked out of place."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(40, 36)
+        self.setFlat(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.TabFocus)  # a keyboard ring, none after a mouse click
+
+    def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 (Qt name)
+        theme = current_theme()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        box = QRectF(self.rect()).adjusted(1, 1, -1, -1)
+        if self.isDown():
+            painter.setBrush(QColor(theme.border))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(box, 8, 8)
+        elif self.underMouse():
+            painter.setBrush(QColor(theme.hover))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(box, 8, 8)
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor(theme.accent), 2))
+            painter.drawRoundedRect(box, 8, 8)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor(theme.text))
+        left, width, bar = (self.width() - 18) / 2, 18.0, 2.0
+        middle = self.height() / 2
+        for offset in (-6.0, 0.0, 6.0):
+            painter.drawRoundedRect(QRectF(left, middle + offset - bar / 2, width, bar), 1, 1)

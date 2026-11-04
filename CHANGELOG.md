@@ -6,10 +6,16 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- **History shows who approved each request.** When ContentShare opens it asks *Who is using
-  ContentShare?* (the last name is filled in). A new *Approved by* column (also in the CSV, and
-  in the step-by-step record) shows that name beside what the person approved. The name button
-  in the menu changes it later. Requests approved before this version show a dash.
+- **Add a folder to the same request.** A card has an *Add a folder...* button. Click a line of the
+  email that was not searched (or type a name), search for it, and it becomes one more section of the
+  same request and the same reply. Nothing is left behind if you do not choose a folder.
+- **Users and passwords.** Every time ContentShare opens it asks you to sign in: choose your
+  name and type your password, or create a new user. A password can be anything. Passwords are
+  stored only as salted hashes. Closing the box quits the app; nothing can be approved, skipped
+  or sent before signing in. The name button in the menu switches user.
+- **History shows who approved each request.** A new *Approved by* column (also in the CSV, and
+  in the step-by-step record) shows the user who approved. Requests approved before this
+  version show a dash.
 - **Telegram alerts.** Optionally, ContentShare posts a short message to a Telegram group when a
   check finds new requests ("3 new requests waiting for approval (2 ready, 1 need a look)"). Set
   it up in Settings → General → Telegram: paste the bot token, press **Find my group**, then
@@ -17,6 +23,8 @@ uses [semantic versioning](https://semver.org/).
   Windows Credential Manager, not in the settings file. It is off until you switch it on.
 
 ### Changed
+- **One menu icon.** The fold button at the bottom of the menu is gone. The **☰** icon at the top is now
+  drawn as three clean bars (no box around it) and is the only one.
 - **The user guide is rewritten** in plain steps, with new pictures of every screen (Requests, a folder
   that was not found, Active copies, History, Settings, the folded menu). `tools/make_screenshots.py`
   makes them from invented data.
@@ -33,6 +41,8 @@ uses [semantic versioning](https://semver.org/).
   list used to stop at five.
 
 ### Fixed
+- The "On Wed, Nov 4 ... at 3:59 PM Name" line of a quoted reply is no longer listed as a line
+  that was not searched.
 - **A folder name that ends in a date was not found** (for example the line `Nov 22-28  Amber Step 4
   English 31-oct-2026`). The free-text reading took the dates and the language out and looked for
   something else. Now every line of the email is first looked up as the exact name of a folder (or

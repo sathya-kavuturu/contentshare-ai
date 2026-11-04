@@ -25,6 +25,7 @@ from contentshare.app.controller import Controller  # noqa: E402
 from contentshare.copy_engine.models import Progress  # noqa: E402
 from contentshare.storage.db import Database  # noqa: E402
 from contentshare.ui.bridge import Bridge  # noqa: E402
+from contentshare.ui.dialogs import LoginDialog  # noqa: E402
 from contentshare.ui.main_window import MainWindow  # noqa: E402
 from contentshare.ui.theme import apply_theme, theme_for  # noqa: E402
 from fake_gmail import make_message  # noqa: E402
@@ -72,6 +73,8 @@ def main() -> None:  # noqa: PLR0915  (a script that takes the pictures in order
         config_path=tmp / "config.yaml", today=lambda: TODAY,
     )  # fmt: skip
     ctl.subscribe(bridge.forward)
+    ctl.create_user("Ravi", "demo")  # invented users, so the pictures show names
+    ctl.create_user("Asha", "demo")
     win = MainWindow(ctl, bridge)
     win.resize(1180, 860)
     win.gmail_banner.setMaximumHeight(0)  # keep it out of the pictures
@@ -117,6 +120,14 @@ def main() -> None:  # noqa: PLR0915  (a script that takes the pictures in order
     win.top_toggle.click()
     shot(win, "menu-folded.png")
     win.top_toggle.click()
+
+    # The sign-in box (two invented users)
+    box = LoginDialog(ctl)
+    box.show()
+    pump(app)
+    box.grab().save(str(OUT / "login.png"))
+    print("wrote login.png")
+    box.close()
 
     # Active copies: hold a copy half way so there is progress to show.
     world.gmail.add(
