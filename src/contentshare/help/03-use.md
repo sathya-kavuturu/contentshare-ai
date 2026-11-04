@@ -22,7 +22,7 @@ To copy a Ready card:
 
 A department set to **exact folder names** (Settings → Departments) shows each folder name from the email that was found on the storage server as **Ready**. A name with several folders of that name, or no folder at all, is **Needs review**, and you can browse for the folder yourself.
 
-If a program is not found, press **Search manually…** and type part of its name, or press **Browse for a folder…** / **Browse for a file…** and pick it yourself on the storage server. What you pick must be inside one of the storage folders in *Settings*, and it does not have to be in the index. If a whole program is missing from every search result, refresh the index in *Settings → Index*.
+If a program is not found, press **Search manually…** and type part of its name, or press **Browse for a folder…** / **Browse for a file…** and pick it yourself on the storage server. What you pick must be inside one of the storage folders in *Settings* (it does not have to be in the index), unless the department has **Allow choosing from anywhere** switched on, in which case it can be anywhere. If a whole program is missing from every search result, refresh the index in *Settings → Index*.
 
 ## Active copies
 

@@ -113,6 +113,19 @@ def resolve_within(root: str | os.PathLike[str], candidate: str | os.PathLike[st
     return Path(os.path.realpath(candidate))
 
 
+def resolve_anywhere(candidate: str | os.PathLike[str]) -> Path:
+    """The real path of a folder or file the user picked by hand in the file dialog, for a
+    department that may take content from anywhere. The text must be an absolute Windows path
+    (no ``..``, no alternate streams, no device prefixes) and must not be a whole drive or share.
+    Text from an email never gets here: only the user's own pick in the dialog does."""
+    text = os.fspath(candidate)
+    ensure_absolute_windows_path(text)
+    real = Path(os.path.realpath(text))
+    if str(real).rstrip("\\/") == str(Path(real.anchor)).rstrip("\\/"):
+        raise PathSafetyError("Choose a folder or file inside the drive, not the whole drive")
+    return real
+
+
 def resolve_within_any(
     roots: Iterable[str | os.PathLike[str]], candidate: str | os.PathLike[str]
 ) -> Path:

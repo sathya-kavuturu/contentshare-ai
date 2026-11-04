@@ -104,11 +104,18 @@ class CandidateDialog(QDialog):
         if chosen:
             self._browsed_pick(chosen)
 
+    def _pick_hint(self) -> str:
+        dept = next(
+            (x for x in self._controller.config.departments if x.name == self._view.department),
+            None,
+        )
+        if dept is not None and dept.browse_anywhere:
+            return "Your pick is first. It can be anywhere on this PC or network."
+        return "Your pick is first. It must be inside a storage folder in Settings."
+
     def _browsed_pick(self, chosen: str) -> None:
         self._browsed = chosen.replace("/", "\\")
-        self._show(
-            self._shown, "Your pick is first. It must be inside a storage folder in Settings."
-        )
+        self._show(self._shown, self._pick_hint())
 
     def _show(self, candidates: list[CandidateView], hint: str) -> None:
         self._shown = candidates

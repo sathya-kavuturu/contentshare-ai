@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 from contentshare.config.models import AppConfig, Department
 from contentshare.ui.folder_list import FolderList
 from contentshare.ui.pickers import choose_folder
-from contentshare.ui.settings_page import exact_folder_option, explain_validation, lines
+from contentshare.ui.settings_page import explain_validation, folder_options, lines
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 from contentshare.ui.widgets import page_header
@@ -125,8 +125,8 @@ class FirstRunWizard(QWizard):
         form.addRow("Sender emails", self.dept_emails)
         form.addRow("Sender domains", self.dept_domains)
         form.addRow("Copy into", root_row)
-        self.exact, exact_box = exact_folder_option()
-        form.addRow("Folder names", exact_box)
+        self.exact, self.anywhere, exact_box = folder_options()
+        form.addRow("Finding content", exact_box)
         return page
 
     def _finish(self) -> QWizardPage:
@@ -167,6 +167,7 @@ class FirstRunWizard(QWizard):
             sender_domains=lines(self.dept_domains.toPlainText()),
             destination_root=self.dept_root.text().strip(),
             exact_folder_names=self.exact.isChecked(),
+            browse_anywhere=self.anywhere.isChecked(),
         )
         data = self._base.model_dump()
         data.update(

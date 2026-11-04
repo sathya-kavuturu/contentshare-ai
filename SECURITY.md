@@ -65,6 +65,11 @@ server.*
 *A request tries to read or write somewhere it should not.*
 
 * Sources must sit under the configured storage folders; destinations under the department's folder.
+  The one exception is a department with **Allow choosing from anywhere** switched on (off by
+  default): the person can pick a folder or file anywhere with the file dialog. That path comes
+  only from the dialog, never from an email; it must be absolute, is resolved like any other, is
+  refused inside Windows or Program Files, as a whole drive or share, or when it overlaps the
+  department's destination, and it is checked again at approval and just before the copy.
   Paths are normalised and symlinks/junctions resolved before the check, so a link cannot lead out.
 * Blocked: `..`, absolute paths in names, reserved device names (`CON`, `NUL`, …), alternate data
   streams (`name:stream`), trailing dots/spaces, illegal characters, over-long names, names that

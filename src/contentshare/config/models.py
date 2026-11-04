@@ -77,6 +77,9 @@ class Department(BaseModel):
     # exactly those names are used and nothing is guessed. False: the closest matches are
     # suggested and the folder can also be browsed for.
     exact_folder_names: bool = False
+    # True: content can also be picked by hand from anywhere on this PC or network (File
+    # Explorer style), not only inside the storage folders. Off by default.
+    browse_anywhere: bool = False
 
     @field_validator("sender_emails")
     @classmethod

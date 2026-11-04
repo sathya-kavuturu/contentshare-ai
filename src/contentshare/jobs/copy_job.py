@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from contentshare.config.models import AppConfig, Department
+from contentshare.config.models import AppConfig, Department, inside_system_folder
 from contentshare.copy_engine import (
     MIB,
     Control,
@@ -25,7 +25,12 @@ from contentshare.copy_engine import (
     copy_tree,
 )
 from contentshare.jobs.states import RequestState
-from contentshare.security.paths import PathSafetyError, resolve_within, resolve_within_any
+from contentshare.security.paths import (
+    PathSafetyError,
+    resolve_anywhere,
+    resolve_within,
+    resolve_within_any,
+)
 from contentshare.storage.repository import Repository
 
 log = logging.getLogger(__name__)
@@ -58,6 +63,22 @@ def options_from_config(
         overwrite=overwrite,
         trusted=trusted or {},
     )
+
+
+def resolve_source(config: AppConfig, dept: Department, text: str) -> Path:
+    """The content to copy: inside a storage folder, or, for a department that is allowed to
+    take content from anywhere, any folder or file the user picked (never inside Windows or
+    Program Files, and never a whole drive)."""
+    try:
+        return resolve_within_any(config.source_roots, text)
+    except PathSafetyError:
+        if not dept.browse_anywhere:
+            raise
+    path = resolve_anywhere(text)
+    protected = inside_system_folder(str(path))
+    if protected:
+        raise PathSafetyError(f"Content inside {protected} cannot be copied")
+    return path
 
 
 def paths_overlap(a: Path, b: Path) -> bool:
@@ -130,7 +151,7 @@ class CopyJobRunner:
         if not row["source_path"] or not row["destination_path"]:
             raise ValueError("Request has no source or destination path")
 
-        src = resolve_within_any(self.config.source_roots, row["source_path"])
+        src = resolve_source(self.config, dept, row["source_path"])
         dst = resolve_within(dept.destination_root, row["destination_path"])
         if paths_overlap(src, dst):
             raise PathSafetyError("Source and destination overlap")

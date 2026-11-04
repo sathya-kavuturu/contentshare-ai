@@ -45,6 +45,11 @@ log = logging.getLogger(__name__)
 
 HASHES = ["xxh3_128", "blake3", "sha256"]
 APPEARANCES = [("system", "Same as Windows"), ("light", "Light"), ("dark", "Dark")]
+ANYWHERE_HINT = (
+    "Lets you pick a folder or file with Browse from anywhere on this PC or network, not only "
+    "inside the storage folders (never inside Windows or Program Files, or a whole drive). "
+    "Meant for departments whose content is not kept in one place."
+)
 EXACT_HINT = (
     "On: the email names the folders exactly as they are on the storage server (one per line, in "
     "a list, or in quotes). Only folders with exactly those names are used and nothing is guessed. "
@@ -65,21 +70,30 @@ def explain_validation(exc: ValidationError) -> str:
     return "\n".join(out)
 
 
-def exact_folder_option(checked: bool = False) -> tuple[QCheckBox, QWidget]:
-    """The "exact folder names" tick with its explanation, for the department forms."""
-    box = QCheckBox("The emails give exact folder names")
-    box.setChecked(checked)
-    box.setAccessibleName("Exact folder names")
-    hint = QLabel(EXACT_HINT)
-    hint.setWordWrap(True)
-    hint.setProperty("role", "small")
+def folder_options(
+    exact: bool = False, anywhere: bool = False
+) -> tuple[QCheckBox, QCheckBox, QWidget]:
+    """The two ticks about finding content ("exact folder names" and "choose from anywhere"),
+    each with its explanation, for the department forms."""
     holder = QWidget()
     layout = QVBoxLayout(holder)
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(4)
-    layout.addWidget(box)
-    layout.addWidget(hint)
-    return box, holder
+    boxes = []
+    for text, name, checked, hint_text in (
+        ("The emails give exact folder names", "Exact folder names", exact, EXACT_HINT),
+        ("Allow choosing from anywhere", "Choose from anywhere", anywhere, ANYWHERE_HINT),
+    ):
+        box = QCheckBox(text)
+        box.setChecked(checked)
+        box.setAccessibleName(name)
+        hint = QLabel(hint_text)
+        hint.setWordWrap(True)
+        hint.setProperty("role", "small")
+        layout.addWidget(box)
+        layout.addWidget(hint)
+        boxes.append(box)
+    return boxes[0], boxes[1], holder
 
 
 class DepartmentDialog(QDialog):
@@ -105,14 +119,16 @@ class DepartmentDialog(QDialog):
         root_row.addWidget(self.root, 1)
         root_row.addWidget(browse)
         self.pattern = QLineEdit(d.subfolder_pattern if d else "{program}")
-        self.exact, exact_box = exact_folder_option(bool(d and d.exact_folder_names))
+        self.exact, self.anywhere, exact_box = folder_options(
+            bool(d and d.exact_folder_names), bool(d and d.browse_anywhere)
+        )
         self.reply = QPlainTextEdit(d.reply_template or "" if d else "")
         self.reply.setPlaceholderText("Leave empty to use the default reply text")
         form.addRow("Name", self.name)
         form.addRow("Sender emails", self.emails)
         form.addRow("Sender domains", self.domains)
         form.addRow("Copy into", root_row)
-        form.addRow("Folder names", exact_box)
+        form.addRow("Finding content", exact_box)
         form.addRow("Subfolder", self.pattern)
         form.addRow("Reply text", self.reply)
         layout.addLayout(form)
@@ -147,6 +163,7 @@ class DepartmentDialog(QDialog):
                 subfolder_pattern=self.pattern.text().strip() or "{program}",
                 reply_template=self.reply.toPlainText().strip() or None,
                 exact_folder_names=self.exact.isChecked(),
+                browse_anywhere=self.anywhere.isChecked(),
             )
         except ValidationError as exc:
             QMessageBox.warning(self, "Check the department", explain_validation(exc))
@@ -566,6 +583,7 @@ class SettingsPage(QWidget):
         for row, d in enumerate(self.departments):
             senders = ", ".join([*d.sender_emails, *(f"@{x}" for x in d.sender_domains)])
             names = "Exact" if d.exact_folder_names else "Suggested"
+            names += " · from anywhere" if d.browse_anywhere else ""
             for col, text in enumerate([d.name, senders, d.destination_root, names]):
                 self.dept_table.setItem(row, col, QTableWidgetItem(text))
 

@@ -6,6 +6,11 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Allow choosing from anywhere, per department** (Settings → Departments, and the first-run
+  setup; off by default). When on, *Browse for a folder… / a file…* accepts content anywhere on the
+  PC or network, for departments whose content is not kept in one place. It is refused inside
+  Windows or Program Files, for a whole drive, and when it overlaps the department's destination,
+  and is checked again at approval and before the copy. Everything copied is still verified.
 - **Exact folder names, per department.** In Settings → Departments (and in the first-run setup)
   tick *The emails give exact folder names* for a department whose requests name the folder as it
   is on the storage server. Each name in the email (one per line, in a list, or in quotes) is looked

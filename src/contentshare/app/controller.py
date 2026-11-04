@@ -32,14 +32,20 @@ from contentshare.gmail.gateway import GmailGateway
 from contentshare.gmail.intake import IntakeReport, IntakeService
 from contentshare.gmail.replies import ReplyDraft, ReplyError, ReplyResult, ReplyService
 from contentshare.index.store import ContentIndex, IndexedItem, ScanReport, measure
-from contentshare.jobs.copy_job import CopyJobRunner, JobOutcome, options_from_config, paths_overlap
+from contentshare.jobs.copy_job import (
+    CopyJobRunner,
+    JobOutcome,
+    options_from_config,
+    paths_overlap,
+    resolve_source,
+)
 from contentshare.jobs.queue import CopyQueue
 from contentshare.jobs.states import InvalidTransitionError, RequestState
 from contentshare.matching.scorer import Candidate, rank_candidates
 from contentshare.matching.service import destination_for
 from contentshare.parsing.dates import date_phrases
 from contentshare.parsing.request import RequestItem, parse_request
-from contentshare.security.paths import PathSafetyError, resolve_within, resolve_within_any
+from contentshare.security.paths import PathSafetyError, resolve_within
 from contentshare.storage.repository import Repository
 
 log = logging.getLogger(__name__)
@@ -350,6 +356,7 @@ class Controller:
         row = self._row(request_id)
         if row["state"] not in (S.NEEDS_REVIEW, S.READY):
             raise ActionError("This request can no longer be changed")
+        dept = self._department(row["department"])
         found = None
         for root in self.config.source_roots:
             try:
@@ -359,10 +366,8 @@ class Controller:
             except (PathSafetyError, ValueError):
                 continue
         if found is None:
-            raise ActionError(
-                "That is outside the storage folders in Settings. "
-                "Choose something inside one of them."
-            )
+            self._use_picked_anywhere(row, dept, path.strip())
+            return
         root, source, relative = found
         if not relative.parts:
             raise ActionError(
@@ -383,14 +388,44 @@ class Controller:
             )  # fmt: skip
         self._use_content(row, indexed)
 
-    def _use_content(self, row: dict[str, Any], indexed: IndexedItem) -> None:
+    def _use_picked_anywhere(self, row: dict[str, Any], dept: Any, path: str) -> None:
+        """A folder or file outside the storage folders, for a department allowed to use one."""
+        if not dept.browse_anywhere:
+            raise ActionError(
+                "That is outside the storage folders in Settings. Choose something inside one "
+                f"of them, or turn on “Allow choosing from anywhere” for {dept.name} in "
+                "Settings → Departments."
+            )
+        try:
+            source = resolve_source(self.config, dept, path)
+        except PathSafetyError as exc:
+            raise ActionError(f"That cannot be used: {exc}") from exc
+        try:
+            measured = measure(source)
+        except OSError as exc:
+            raise ActionError(f"Cannot read that content: {exc}") from exc
+        if measured is None:
+            raise ActionError("That content could not be found")
+        indexed = IndexedItem(
+            0, str(source.parent), source.name, source.name,
+            "dir" if source.is_dir() else "file", measured[0], measured[1], 0, 0,
+        )  # fmt: skip
+        self._use_content(row, indexed, source)
+
+    def _use_content(
+        self, row: dict[str, Any], indexed: IndexedItem, picked: Path | None = None
+    ) -> None:
         """Point the request at this content (checked again on disk) and make it READY."""
         request_id = int(row["id"])
         dept = self._department(row["department"])
         try:
-            source = resolve_within_any(self.config.source_roots, indexed.full_path)
+            source = picked or resolve_source(self.config, dept, indexed.full_path)
         except PathSafetyError as exc:
             raise ActionError(f"That content is outside the source folders: {exc}") from exc
+        if paths_overlap(source, Path(dept.destination_root)):
+            raise ActionError(
+                "That folder is inside, or contains, this department's destination folder"
+            )
         try:
             measured = measure(source)
         except OSError as exc:
@@ -481,7 +516,7 @@ class Controller:
         if not row["source_path"] or not row["destination_path"]:
             raise ActionError("Choose the content and a destination first")
         try:
-            src = resolve_within_any(self.config.source_roots, row["source_path"])
+            src = resolve_source(self.config, dept, row["source_path"])
             dst = resolve_within(dept.destination_root, row["destination_path"])
         except PathSafetyError as exc:
             raise ActionError(f"Path not allowed: {exc}") from exc
