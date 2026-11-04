@@ -324,6 +324,8 @@ class MainWindow(QMainWindow):
         if event.kind == "copy_finished" or event.kind in ("reply_sent", "reply_problem"):
             self.say(f"Request #{event.request_id}: {event.message}")
             self._toast(for_event(event))
+        if event.kind == "telegram_problem":
+            self.say(f"Telegram alert not sent: {event.message}")
         if event.kind in ("changed", "copy_finished"):
             self.update_chrome()
 

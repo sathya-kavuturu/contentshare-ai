@@ -96,6 +96,11 @@ see its average speed too.
 * Pop-ups say things like "3 new requests" or "Request #7: copy verified". They never show
   email subjects, names or folders, so they are safe on a locked screen.
 * If the PC was off at check time, ContentShare checks when it is next on.
+* **Telegram alerts (optional).** In Settings → General → Telegram, a bot you make with
+  @BotFather can post to your group each time a check finds new requests: for example "3 new
+  requests waiting for approval (2 ready, 1 need a look)". Press **Find my group** to fill in the
+  group number and **Send a test message** to check. Only counts are sent, never subjects, names or
+  folders, and approving stays with you. The bot token is kept in Windows Credential Manager.
 
 ## 8a. Help and updates
 

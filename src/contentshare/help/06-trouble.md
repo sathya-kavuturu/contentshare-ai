@@ -10,6 +10,7 @@
 | **A storage folder was added by mistake** | *Settings → General*: select it, then **Remove** (or **Edit** to correct it), then **Save settings**. |
 | **A copy shows Failed again and again** | Read the reason. If files keep failing verification, test the PC's memory, the cable and the server, because the checksum is catching real corruption. |
 | **No pop-ups** | Windows *Settings → System → Notifications*: make sure ContentShare is on and Focus is off. Also check *Show pop-up notifications* in ContentShare's settings. |
+| **No Telegram message** | *Settings → General → Telegram*: press **Send a test message**; the reply says what is wrong. Usual causes: the bot was removed from the group, the group number is wrong (use **Find my group**), or there is no internet connection. A message is sent only when a check finds *new* requests. |
 | **The window disappeared** | It is still running in the tray (next to the clock, maybe under the ^ arrow). Click the icon, or right-click → **Open ContentShare**. |
 | **An update will not start** | Open the folder shown in the message and run the installer yourself, or download the newest one from the project's releases page. |
 
@@ -20,7 +21,7 @@
 | Settings | `%APPDATA%\ContentShare\config.yaml` (the previous version is kept as `config.yaml.bak`) |
 | History and the file index | `%APPDATA%\ContentShare\contentshare.db` |
 | Log | `%APPDATA%\ContentShare\logs\contentshare.log` (never contains passwords or email text) |
-| Gmail sign-in | Windows Credential Manager, entries named `ContentShare` |
+| Gmail sign-in and the Telegram bot token | Windows Credential Manager, entries named `ContentShare` |
 | Downloaded updates | `%APPDATA%\ContentShare\updates` |
 
 ## Moving to another PC
@@ -39,6 +40,7 @@ Gmail → Disconnect*) so access is revoked at Google too.
 * ContentShare reads only mail from the senders you list.
 * Email text is never written to the log, and pop-ups show counts only.
 * The only other internet contact is the optional start-up check for a new version (a plain read
-  of the project's public releases page).
+  of the project's public releases page) and, if you switch it on, the Telegram alert (a message
+  with counts only, sent to Telegram).
 
 [Back to Getting started](help:start)

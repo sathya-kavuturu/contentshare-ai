@@ -5,7 +5,16 @@ uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+- **Telegram alerts.** Optionally, ContentShare posts a short message to a Telegram group when a
+  check finds new requests ("3 new requests waiting for approval (2 ready, 1 need a look)"). Set
+  it up in Settings → General → Telegram: paste the bot token, press **Find my group**, then
+  **Send a test message**. Only counts are sent, never email text, and the bot token is kept in
+  Windows Credential Manager, not in the settings file. It is off until you switch it on.
+
 ### Changed
+- **Cancelling a copy** names the program in its question, and "No" is now the default answer, so
+  pressing Enter cannot stop a copy by accident.
 - **One email is one request on screen.** An email that lists several folders is now one card with a
   section for each folder (status, the path chosen, its own buttons), instead of one card per folder.
   **Approve and copy**, **Skip all** and **Reject…** work on the whole email, the number on the

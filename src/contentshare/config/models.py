@@ -190,6 +190,28 @@ class UpdateSettings(BaseModel):
     check_on_start: bool = True
 
 
+# A Telegram chat: a number (groups are negative) or @name of a public channel.
+TELEGRAM_CHAT = re.compile(r"^(-?\d{1,20}|@[A-Za-z][A-Za-z0-9_]{4,31})$")
+
+
+class TelegramSettings(BaseModel):
+    """Alerts to a Telegram group when new requests wait for approval. Only counts are sent.
+    The bot token is not here: it is kept in Windows Credential Manager."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    chat_id: str = ""
+
+    @field_validator("chat_id")
+    @classmethod
+    def _chat(cls, value: str) -> str:
+        value = value.strip()
+        if value and not TELEGRAM_CHAT.match(value):
+            raise ValueError("The Telegram chat number is not valid (a group looks like -100123…)")
+        return value
+
+
 class ScheduleSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -319,6 +341,7 @@ class AppConfig(BaseModel):
     departments: list[Department] = Field(default_factory=list)
     schedule: ScheduleSettings = Field(default_factory=ScheduleSettings)
     updates: UpdateSettings = Field(default_factory=UpdateSettings)
+    telegram: TelegramSettings = Field(default_factory=TelegramSettings)
     copy_options: CopySettings = Field(default_factory=CopySettings)
     matching: MatchSettings = Field(default_factory=MatchSettings)
     parsing: ParsingSettings = Field(default_factory=ParsingSettings)

@@ -23,6 +23,7 @@ from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from contentshare.app.telegram import TelegramError, TelegramNotifier, alert_text
 from contentshare.config.models import AppConfig, Department
 from contentshare.config.store import save_config
 from contentshare.copy_engine import (
@@ -325,8 +326,10 @@ class Controller:
         auth: GmailAuth | None = None,
         config_path: Path | None = None,
         today: Callable[[], date] = date.today,
+        telegram: TelegramNotifier | None = None,
     ) -> None:
         self.repo, self.index, self.config = repo, index, config
+        self.telegram = telegram or TelegramNotifier()  # touches nothing until an alert is sent
         self._gateway_factory, self.auth = gateway_factory, auth
         self._config_path, self._today = config_path, today
         self._live: dict[int, _Live] = {}
@@ -918,7 +921,24 @@ class Controller:
         finally:
             self._check_lock.release()
         self._emit("changed")
+        self._alert_telegram(report)
         return report
+
+    def _alert_telegram(self, report: IntakeReport) -> None:
+        """Tell the Telegram group (if set up) that new requests wait for approval. A failure is
+        only reported: the requests are on screen either way."""
+        settings = self.config.telegram
+        text = alert_text(report)
+        if not settings.enabled or not settings.chat_id or text is None:
+            return
+        try:
+            self.telegram.send(settings.chat_id, text)
+        except TelegramError as exc:
+            log.warning("telegram alert not sent: %s", exc)
+            self._emit("telegram_problem", None, str(exc))
+        except Exception as exc:  # the credential store can fail in ways of its own
+            log.warning("telegram alert not sent: %s", type(exc).__name__)
+            self._emit("telegram_problem", None, "The Telegram alert could not be sent.")
 
     def index_is_stale(self, *, max_age_hours: int = 20) -> bool:
         """True if any storage folder was never scanned or not scanned recently."""

@@ -16,11 +16,32 @@ which entry and why, and nothing is saved. Settings cannot be saved while a copy
 | **Start ContentShare when I sign in to Windows** | Starts it quietly in the tray at sign-in. It adds one entry for your user only; switching it off removes it. |
 | **Keep running in the tray when the window is closed** | ✕ hides the window instead of quitting, so the automatic check keeps working. Quit from the tray icon's menu. |
 | **Show pop-up notifications** | Windows pop-ups with counts only, never names, subjects or folders. |
+| **Tell a Telegram group when new requests wait for approval** | Posts one short message to a Telegram group each time a check finds new requests. See *Telegram alerts* below. |
 | **Tick "send the reply automatically" on new requests** | The default for the tick box on each card. The reply is then sent as soon as the copy is verified. Leave it off until you trust the results. |
 | **Dry-run mode** | Approving checks paths, free space and names and reports what would be copied, but **copies nothing and sends nothing**. A bar across the window reminds you while it is on. |
 | **Storage folders to search** | The folders on the server that hold the programs (see below). |
 | **Default reply text** | The message sent when a copy is verified. Departments can have their own. |
 | **Check for updates when ContentShare starts** | See *Updates* below. |
+
+### Telegram alerts
+
+So the people who approve requests hear about them without keeping the window open.
+
+1. In Telegram, open **@BotFather**, send `/newbot`, and copy the **token** it gives you.
+2. Add the new bot to your group, then write any message in the group.
+3. In *Settings → General → Telegram* tick the switch, paste the token, and press **Find my
+   group** (it fills in the group number). Press **Send a test message** to check, then
+   **Save settings**.
+
+The message only gives counts, for example *"3 new requests waiting for approval (2 ready, 1 need
+a look). Open ContentShare to review and approve. Nothing has been copied or sent."* It never
+contains an email subject, a sender, a program name or a path. Approving stays with you: the
+message only tells people that something is waiting.
+
+The bot token is a password. It is kept in Windows Credential Manager, not in the settings file.
+**Forget the token** removes it. If you ever shared it by mistake, send `/revoke` to @BotFather
+to get a new one. Dry-run mode does not stop these alerts. If an alert cannot be sent, the status
+bar says so and the requests are still shown as usual.
 
 ### Storage folders
 

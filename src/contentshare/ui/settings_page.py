@@ -33,11 +33,13 @@ from PySide6.QtWidgets import (
 
 import contentshare
 from contentshare.app.controller import ActionError
+from contentshare.app.telegram import TelegramError
 from contentshare.config.models import CHECK_INTERVALS, AppConfig, Department
 from contentshare.config.templates import REPLY_PLACEHOLDERS, SUBFOLDER_PLACEHOLDERS
 from contentshare.ui.context import UiContext
 from contentshare.ui.folder_list import FolderList
 from contentshare.ui.pickers import choose_file, choose_folder
+from contentshare.ui.telegram_box import TelegramBox
 from contentshare.ui.timefmt import local_stamp
 from contentshare.ui.widgets import Combo, page_header
 from contentshare.ui.widgets import Label as QLabel
@@ -352,6 +354,10 @@ class SettingsPage(QWidget):
         form.addRow("", self.to_tray)
         form.addRow("", self.notify)
 
+        self._section(form, "Telegram")
+        self.telegram_box = TelegramBox(self.ctx)
+        form.addRow("", self.telegram_box)
+
         self._section(form, "Safety")
         self.auto_default = QCheckBox("Tick “send the reply automatically” on new requests")
         self.dry_run = QCheckBox(
@@ -568,6 +574,7 @@ class SettingsPage(QWidget):
         self.daily_enabled.setChecked(c.schedule.daily_check_enabled)
         self.to_tray.setChecked(c.schedule.close_to_tray)
         self.notify.setChecked(c.schedule.notifications)
+        self.telegram_box.load(c)
         self.start_login.setChecked(c.schedule.start_with_windows)
         self.auto_default.setChecked(c.auto_reply_default)
         self.dry_run.setChecked(c.dry_run)
@@ -603,6 +610,7 @@ class SettingsPage(QWidget):
             notifications=self.notify.isChecked(),
             start_with_windows=self.start_login.isChecked(),
         )
+        base["telegram"] = self.telegram_box.values()
         base["appearance"] = self._appearance()
         base["auto_reply_default"] = self.auto_default.isChecked()
         base["dry_run"] = self.dry_run.isChecked()
@@ -640,6 +648,14 @@ class SettingsPage(QWidget):
             return False
         except ValueError as exc:
             QMessageBox.warning(self, "Check the settings", str(exc))
+            return False
+        try:
+            self.telegram_box.commit()
+        except TelegramError as exc:
+            QMessageBox.warning(self, "Check the settings", str(exc))
+            return False
+        except Exception as exc:  # the credential store refused
+            self.ctx.fail(self, "Telegram token not saved", exc)
             return False
         try:
             self.ctx.controller.apply_config(config)

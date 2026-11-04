@@ -12,6 +12,7 @@ import pytest
 from PySide6.QtWidgets import QApplication, QCheckBox, QDialog, QPushButton
 
 from contentshare.app.controller import Controller
+from contentshare.app.telegram import Chat, TelegramError, valid_token
 from contentshare.config.store import load_config
 from contentshare.storage.db import Database
 from contentshare.ui.bridge import Bridge
@@ -598,6 +599,145 @@ def test_settings_reject_invalid_values_with_a_readable_message(rig: Rig, boxes:
     page.roots.addItem("relative\\path")
     assert not page.save()
     assert "source_roots" in boxes.last()
+
+
+# --------------------------------------------------------------------------- Telegram settings
+class FakeTelegram:
+    def __init__(self) -> None:
+        self.token: str | None = None
+        self.sent: list[tuple[str, str, str | None]] = []
+        self.chats: list[Chat] = []
+        self.error: Exception | None = None
+
+    def has_token(self) -> bool:
+        return bool(self.token)
+
+    def save_token(self, token: str) -> None:
+        if not valid_token(token):
+            raise TelegramError("That does not look like a bot token.")
+        self.token = token
+
+    def forget_token(self) -> None:
+        self.token = None
+
+    def send(self, chat_id: str, text: str, *, token: str | None = None) -> None:
+        if self.error:
+            raise self.error
+        self.sent.append((chat_id, text, token))
+
+    def recent_chats(self, *, token: str | None = None) -> list[Chat]:
+        if self.error:
+            raise self.error
+        return self.chats
+
+
+TG_TOKEN = "123456789:AAH-abcdefghijklmnopqrstuvwxyz012345"
+
+
+@pytest.fixture
+def tg(rig: Rig) -> FakeTelegram:
+    fake = FakeTelegram()
+    rig.controller.telegram = fake  # type: ignore[assignment]
+    rig.window.settings.load()
+    return fake
+
+
+def test_telegram_is_off_until_chosen_and_fields_follow_the_switch(
+    rig: Rig, tg: FakeTelegram
+) -> None:
+    box = rig.window.settings.telegram_box
+    assert not rig.controller.config.telegram.enabled
+    assert not box.token.isEnabled() and not box.test.isEnabled()
+    box.enabled.setChecked(True)
+    assert box.token.isEnabled() and box.test.isEnabled() and box.find_group.isEnabled()
+
+
+def test_saving_telegram_keeps_the_token_out_of_the_settings_file(
+    rig: Rig, tg: FakeTelegram, tmp_path: Path
+) -> None:
+    page = rig.window.settings
+    box = page.telegram_box
+    box.enabled.setChecked(True)
+    box.token.setText(TG_TOKEN)
+    box.chat.setText("-1001234567890")
+    assert page.save()
+    assert tg.token == TG_TOKEN and box.token.text() == ""
+    assert rig.controller.config.telegram.enabled
+    assert rig.controller.config.telegram.chat_id == "-1001234567890"
+    assert TG_TOKEN not in (tmp_path / "config.yaml").read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    ("chat", "token", "fragment"),
+    [
+        ("", TG_TOKEN, "group number"),
+        ("-100123", "", "bot token"),
+        ("-100123", "nonsense", "bot token"),
+    ],
+)
+def test_telegram_needs_a_group_and_a_token_to_be_switched_on(
+    rig: Rig, boxes: Boxes, tg: FakeTelegram, chat: str, token: str, fragment: str
+) -> None:
+    page = rig.window.settings
+    page.telegram_box.enabled.setChecked(True)
+    page.telegram_box.chat.setText(chat)
+    page.telegram_box.token.setText(token)
+    assert not page.save()
+    assert fragment in boxes.last() and not rig.controller.config.telegram.enabled
+
+
+def test_a_test_message_uses_what_is_typed_and_says_so(
+    rig: Rig, boxes: Boxes, tg: FakeTelegram, qtbot: Any
+) -> None:
+    box = rig.window.settings.telegram_box
+    box.enabled.setChecked(True)
+    box.token.setText(TG_TOKEN)
+    box.chat.setText("-100555")
+    box.test.click()
+    qtbot.waitUntil(lambda: bool(boxes.shown), timeout=5000)
+    assert tg.sent and tg.sent[0][0] == "-100555" and tg.sent[0][2] == TG_TOKEN
+    assert "test message was sent" in boxes.last()
+
+
+def test_a_failed_test_message_shows_the_reason(
+    rig: Rig, boxes: Boxes, tg: FakeTelegram, qtbot: Any
+) -> None:
+    box = rig.window.settings.telegram_box
+    box.enabled.setChecked(True)
+    box.chat.setText("-100555")
+    tg.token = TG_TOKEN
+    tg.error = TelegramError("The bot is not allowed to post there.")
+    box.test.click()
+    qtbot.waitUntil(lambda: bool(boxes.shown), timeout=5000)
+    assert "not allowed to post" in boxes.last()
+    assert box.test.isEnabled()  # usable again
+
+
+def test_find_my_group_fills_in_the_number(
+    rig: Rig, boxes: Boxes, tg: FakeTelegram, qtbot: Any
+) -> None:
+    box = rig.window.settings.telegram_box
+    box.enabled.setChecked(True)
+    tg.token = TG_TOKEN
+    tg.chats = [Chat("-100777", "Media")]
+    box.find_group.click()
+    qtbot.waitUntil(lambda: box.chat.text() == "-100777", timeout=5000)
+    tg.chats = []
+    box.find_group.click()
+    qtbot.waitUntil(lambda: bool(boxes.shown), timeout=5000)
+    assert "has not seen a group" in boxes.last()
+
+
+def test_forgetting_the_token_asks_first(rig: Rig, boxes: Boxes, tg: FakeTelegram) -> None:
+    box = rig.window.settings.telegram_box
+    box.enabled.setChecked(True)
+    tg.token = TG_TOKEN
+    boxes.answer = QMessageBox.StandardButton.No
+    box.forget.click()
+    assert tg.token == TG_TOKEN
+    boxes.answer = QMessageBox.StandardButton.Yes
+    box.forget.click()
+    assert tg.token is None
 
 
 def test_settings_refused_while_copying(
