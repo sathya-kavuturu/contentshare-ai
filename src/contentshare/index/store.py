@@ -47,7 +47,7 @@ def _in_roots(column: str, roots: Sequence[str] | None) -> tuple[str, tuple[str,
 def _search_sql(roots: Sequence[str] | None) -> tuple[str, tuple[str, ...]]:
     clause, args = _in_roots("c.root", roots)
     return (
-        "SELECT c.* FROM content_fts f JOIN content_items c ON c.id = f.rowid "  # noqa: S608
+        "SELECT c.* FROM content_fts f JOIN content_items c ON c.id = f.rowid "  # noqa: S608  # nosec B608
         f"WHERE content_fts MATCH ?{clause} ORDER BY bm25(content_fts, 10.0, 1.0) LIMIT ?",
         args,
     )
@@ -276,7 +276,7 @@ class ContentIndex:
         with self.db.read() as conn:
             for name in names:
                 rows = conn.execute(
-                    "SELECT * FROM content_items WHERE name = ? COLLATE NOCASE AND kind = 'dir'"  # noqa: S608
+                    "SELECT * FROM content_items WHERE name = ? COLLATE NOCASE AND kind = 'dir'"  # noqa: S608  # nosec B608
                     f"{scope} ORDER BY depth, root, rel_path LIMIT 50",
                     (name, *root_args),
                 ).fetchall()
@@ -297,7 +297,7 @@ class ContentIndex:
                 rows = conn.execute(
                     # a range on the name column (sorted case-blind), so the index is used:
                     # "Talk", then "Talk." up to just before "Talk/"
-                    "SELECT * FROM content_items WHERE kind = 'file' AND name >= ? COLLATE NOCASE "  # noqa: S608
+                    "SELECT * FROM content_items WHERE kind = 'file' AND name >= ? COLLATE NOCASE "  # noqa: S608  # nosec B608
                     f"AND name < ? COLLATE NOCASE{scope} ORDER BY depth, root, rel_path LIMIT 200",
                     (name, name + "/", *root_args),
                 ).fetchall()
