@@ -13,6 +13,9 @@ uses [semantic versioning](https://semver.org/).
   Windows Credential Manager, not in the settings file. It is off until you switch it on.
 
 ### Changed
+- **The user guide is rewritten** in plain steps, with new pictures of every screen (Requests, a folder
+  that was not found, Active copies, History, Settings, the folded menu). `tools/make_screenshots.py`
+  makes them from invented data.
 - **Cancelling a copy** names the program in its question, and "No" is now the default answer, so
   pressing Enter cannot stop a copy by accident.
 - **One email is one request on screen.** An email that lists several folders is now one card with a
