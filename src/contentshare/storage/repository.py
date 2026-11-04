@@ -40,13 +40,22 @@ _UPDATABLE = frozenset(
 
 _REQUEST_SELECT = (
     "SELECT r.*, e.sender_email, e.sender_name, e.department, e.subject, e.snippet, "
-    "e.received_at, e.auth_status, e.gmail_thread_id, e.gmail_message_id "
+    "e.received_at, e.auth_status, e.gmail_thread_id, e.gmail_message_id, "
+    # how long the last finished copy of this request took, in seconds
+    "(SELECT (julianday(j.finished_at) - julianday(j.started_at)) * 86400.0 FROM jobs j "
+    "WHERE j.request_id = r.id AND j.finished_at IS NOT NULL ORDER BY j.id DESC LIMIT 1) "
+    "AS copy_seconds "
     "FROM requests r JOIN emails e ON e.id = r.email_id"
 )
 
 
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def _now_precise() -> str:
+    """For timing a copy: short copies take less than the second ``_now`` rounds to."""
+    return datetime.now(UTC).isoformat(timespec="milliseconds")
 
 
 def _row(row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -302,7 +311,7 @@ class Repository:
             cur = conn.execute(
                 "INSERT INTO jobs (request_id, state, attempt, started_at) "
                 "VALUES (?, 'RUNNING', ?, ?)",
-                (request_id, attempt, _now()),
+                (request_id, attempt, _now_precise()),
             )
             return int(cur.lastrowid or 0), int(attempt)
 
@@ -310,7 +319,7 @@ class Repository:
         with self.db.transaction() as conn:
             conn.execute(
                 "UPDATE jobs SET state = ?, finished_at = ?, error = ? WHERE id = ?",
-                (state, _now(), error, job_id),
+                (state, _now_precise(), error, job_id),
             )
 
     def record_file(

@@ -7,7 +7,9 @@ Methods
   shutil.copy2        plain copy, no verification
   robocopy /J         Windows unbuffered copy, no verification
   shutil + verify     shutil.copy2, then hash source and destination (a manual "copy, then check")
-  ContentShare        this engine: hash while copying, fsync, uncached read-back, atomic rename
+  ContentShare        this engine: hash while copying (the next chunk is read while this one is
+                      written), fsync, uncached read-back, atomic rename; optionally several
+                      files at a time
 
 Everything runs on one disk here, so the OS file cache flatters the methods that do not bypass
 it. On a real network share the gap between "unverified" and "verified" is usually smaller,
@@ -85,10 +87,11 @@ def run_shutil_verify(src: Path, dst: Path) -> None:
             raise RuntimeError(f"verification failed for {source}")
 
 
-def run_engine(algorithm: str) -> Callable[[Path, Path], None]:
+def run_engine(algorithm: str, files_at_once: int = 1) -> Callable[[Path, Path], None]:
     def run(src: Path, dst: Path) -> None:
         result = copy_tree(
-            build_plan(src, dst), CopyOptions(algorithm=algorithm, chunk_bytes=8 * MIB)
+            build_plan(src, dst),
+            CopyOptions(algorithm=algorithm, chunk_bytes=8 * MIB, parallel_files=files_at_once),
         )
         if not result.ok:
             raise RuntimeError(f"engine failed: {result.failures}")
@@ -137,9 +140,10 @@ def main() -> int:
             ("shutil.copy2", run_shutil, "no"),
             ("robocopy /J", run_robocopy, "no"),
             ("shutil.copy2 + hash both", run_shutil_verify, "yes (separate pass)"),
-            ("ContentShare (xxh3_128)", run_engine("xxh3_128"), "yes"),
-            ("ContentShare (blake3)", run_engine("blake3"), "yes"),
-            ("ContentShare (sha256)", run_engine("sha256"), "yes"),
+            ("ContentShare, 1 file at a time", run_engine("xxh3_128"), "yes"),
+            ("ContentShare, 4 at a time (xxh3)", run_engine("xxh3_128", 4), "yes"),
+            ("ContentShare, 4 at a time (blake3)", run_engine("blake3", 4), "yes"),
+            ("ContentShare, 4 at a time (sha256)", run_engine("sha256", 4), "yes"),
         ]
         rows = []
         for name, fn, verified in methods:

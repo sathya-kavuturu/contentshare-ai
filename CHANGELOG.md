@@ -6,6 +6,11 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **History shows how long each copy took.** A new *Copy time* column (and, when a request is
+  selected, its average speed) shows the time from the first file to the last check, and the
+  exported CSV has `copy_seconds`. Copy start and end times are now stored to the millisecond, so
+  short copies no longer read as 0 s. Requests copied by earlier versions show the time to the
+  nearest second.
 - **Fold the menu on the left** to icons only (**« Fold menu** at its bottom; names appear as tooltips,
   and the Requests icon keeps its count). It opens by itself if an update is found.
 - **Fold requests to one short line** showing the title, sender name and department: an arrow on each
@@ -55,6 +60,14 @@ uses [semantic versioning](https://semver.org/).
 - **Appearance** in Settings → General: *Same as Windows*, *Light* or *Dark*, applied at once.
 
 ### Changed
+- **Faster copies, with the same checking.** The next piece of a file is now read (and its checksum
+  worked out) while the current piece is being written, and the read-back that verifies the copy
+  reads ahead the same way. On the development PC a large file copies about 40% faster. Several
+  files of one request are also copied at the same time (Settings → Matching and copying →
+  *Files at the same time*, 1–8, default 4; 1 gives the old one-by-one behaviour), which is
+  what helps most with many small files. Every file still goes through copy, flush to disk,
+  read-back from the disk, comparison and rename on its own, and a file that fails is never put under
+  its real name.
 - **A new look**, built from the Linear design analysis in the `awesome-design-md` collection, in
   both light and dark: a near-black canvas with charcoal panels and hairline borders (soft grey and
   white in light), one lavender accent for the main action, the selection and the focus ring, and
@@ -74,6 +87,9 @@ uses [semantic versioning](https://semver.org/).
 - Settings and Help are laid out in the background shortly after start, so they open at once.
 
 ### Fixed
+- **The security scan (bandit) failed in CI** on three database queries whose only built-in part is
+  the list of `?` marks for the folders searched. They are marked as reviewed, as the others are,
+  so the release is published again. The tests themselves had passed.
 - **Exact folder names missed lines that began with a date.** A line such as `Nov 22-28 Amber Step 4
   Hindi v002` is now looked up as the folder `Amber Step 4 Hindi v002` when no folder has the whole
   line as its name. A date after the name is kept, as it can be part of it.

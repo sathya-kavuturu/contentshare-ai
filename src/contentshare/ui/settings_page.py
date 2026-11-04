@@ -499,6 +499,9 @@ class SettingsPage(QWidget):
         self.concurrency = QSpinBox()
         self.concurrency.setRange(1, 4)
         self.concurrency.setMaximumWidth(160)
+        self.files_at_once = QSpinBox()
+        self.files_at_once.setRange(1, 8)
+        self.files_at_once.setMaximumWidth(160)
         self.attempts = QSpinBox()
         self.attempts.setRange(1, 10)
         self.attempts.setMaximumWidth(160)
@@ -507,6 +510,7 @@ class SettingsPage(QWidget):
         form.addRow("Verification checksum", self.hash)
         form.addRow("", self.keep_checksums)
         form.addRow("Copies at the same time", self.concurrency)
+        form.addRow("Files at the same time", self.files_at_once)
         form.addRow("Attempts per file", self.attempts)
         note = QLabel(
             "Lower the Ready score only after checking real matches in the review list: "
@@ -582,6 +586,7 @@ class SettingsPage(QWidget):
         self.hash.setCurrentText(c.copy_options.hash_algorithm)
         self.keep_checksums.setChecked(c.copy_options.write_checksum_file)
         self.concurrency.setValue(c.copy_options.concurrency)
+        self.files_at_once.setValue(c.copy_options.files_at_once)
         self.attempts.setValue(c.copy_options.max_attempts)
         self._refresh_status()
         self.message.setText("")
@@ -622,6 +627,7 @@ class SettingsPage(QWidget):
             hash_algorithm=self.hash.currentText(),
             write_checksum_file=self.keep_checksums.isChecked(),
             concurrency=self.concurrency.value(),
+            files_at_once=self.files_at_once.value(),
             max_attempts=self.attempts.value(),
         )
         return AppConfig.model_validate(base)

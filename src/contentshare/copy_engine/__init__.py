@@ -5,6 +5,7 @@ from contentshare.copy_engine.engine import (
     cleanup_partials,
     copy_tree,
     format_bytes,
+    format_duration,
     preflight,
 )
 from contentshare.copy_engine.models import (
@@ -35,5 +36,6 @@ __all__ = [
     "cleanup_partials",
     "copy_tree",
     "format_bytes",
+    "format_duration",
     "preflight",
 ]

@@ -85,6 +85,7 @@ class CopyOptions:
     algorithm: str = "xxh3_128"
     write_checksum_file: bool = True  # leave <folder>.checksums.<ext> beside the copied files
     chunk_bytes: int = 8 * MIB
+    parallel_files: int = 1  # files copied at the same time
     max_attempts: int = 3
     backoff_base_s: float = 1.0
     free_space_margin_pct: int = 5

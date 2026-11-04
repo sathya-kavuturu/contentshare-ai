@@ -10,6 +10,7 @@ page-aligned, which avoids needing ``VirtualAlloc``.
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import mmap
 import os
@@ -20,6 +21,7 @@ from pathlib import Path
 
 from contentshare.copy_engine.hashing import new_hasher
 from contentshare.copy_engine.models import Control
+from contentshare.copy_engine.readahead import depth_for, read_ahead
 
 _ERROR_INVALID_PARAMETER = 87
 _ERROR_NOT_SUPPORTED = 50
@@ -40,22 +42,18 @@ def _hash_buffered(
     path: str, algorithm: str, chunk: int, control: Control, on_bytes: Callable[[int], None] | None
 ) -> str:
     hasher = new_hasher(algorithm)
-    buf = bytearray(chunk)
-    view = memoryview(buf)
+    views = [memoryview(bytearray(chunk)) for _ in range(depth_for(chunk))]
     try:
         with open(path, "rb", buffering=0) as handle:
-            while True:
-                control.checkpoint()
-                n = handle.readinto(buf)
-                if not n:
-                    break
-                piece = view[:n]
-                hasher.update(piece)
-                piece.release()
-                if on_bytes:
-                    on_bytes(n)
+            chunks = read_ahead(lambda i: handle.readinto(views[i]) or 0, views, hasher.update)
+            with contextlib.closing(chunks):
+                for piece in chunks:
+                    control.checkpoint()
+                    if on_bytes:
+                        on_bytes(len(piece))
     finally:
-        view.release()
+        for view in views:
+            view.release()
     return hasher.hexdigest()
 
 
@@ -118,28 +116,31 @@ if sys.platform == "win32":
             return _hash_buffered(path, algorithm, chunk, control, on_bytes), False
 
         hasher = new_hasher(algorithm)
-        region = mmap.mmap(-1, chunk)
-        anchor = ctypes.c_char.from_buffer(region)
-        address = ctypes.addressof(anchor)
-        view = memoryview(region)
-        read = wintypes.DWORD(0)
+        # page-aligned buffers (anonymous mmaps), as unbuffered reads require
+        regions = [mmap.mmap(-1, chunk) for _ in range(depth_for(chunk))]
+        anchors = [ctypes.c_char.from_buffer(r) for r in regions]
+        addresses = [ctypes.addressof(a) for a in anchors]
+        views = [memoryview(r) for r in regions]
+        read = wintypes.DWORD(0)  # only the reader thread uses it
+
+        def read_into(i: int) -> int:
+            if not _k32.ReadFile(handle, addresses[i], chunk, ctypes.byref(read), None):
+                raise ctypes.WinError(ctypes.get_last_error())
+            return int(read.value)
+
         try:
-            while True:
-                control.checkpoint()
-                if not _k32.ReadFile(handle, address, chunk, ctypes.byref(read), None):
-                    raise ctypes.WinError(ctypes.get_last_error())
-                n = read.value
-                if n == 0:
-                    break
-                piece = view[:n]
-                hasher.update(piece)
-                piece.release()
-                if on_bytes:
-                    on_bytes(n)
+            chunks = read_ahead(read_into, views, hasher.update)
+            with contextlib.closing(chunks):
+                for piece in chunks:
+                    control.checkpoint()
+                    if on_bytes:
+                        on_bytes(len(piece))
         finally:
-            view.release()
-            del anchor
-            region.close()
+            for view in views:
+                view.release()
+            anchors.clear()
+            for region in regions:
+                region.close()
             _k32.CloseHandle(handle)
         return hasher.hexdigest(), True
 

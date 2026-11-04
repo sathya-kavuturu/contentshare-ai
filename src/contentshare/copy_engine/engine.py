@@ -16,8 +16,10 @@ import errno
 import logging
 import os
 import stat
+import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
 from typing import BinaryIO
 
@@ -40,6 +42,7 @@ from contentshare.copy_engine.models import (
     SourceChangedError,
     TreeResult,
 )
+from contentshare.copy_engine.readahead import depth_for, read_ahead
 from contentshare.copy_engine.winio import extended, free_space, hash_file, is_reparse_or_link
 from contentshare.security.paths import PathSafetyError, check_component
 
@@ -58,6 +61,22 @@ def format_bytes(n: float) -> str:
         if abs(n) < 1024 or unit == "TB":
             return f"{n:.1f} {unit}"
     raise AssertionError("unreachable")
+
+
+def format_duration(seconds: float) -> str:
+    """``< 1 s``, ``4.2 s``, ``38 s``, ``2 min 05 s``, ``1 h 02 min``."""
+    if seconds < 1:
+        return "< 1 s"
+    if seconds < 10:
+        return f"{seconds:.1f} s"
+    whole = round(seconds)
+    if whole < 60:
+        return f"{whole} s"
+    minutes, secs = divmod(whole, 60)
+    if minutes < 60:
+        return f"{minutes} min {secs:02d} s"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes:02d} min"
 
 
 def _real(root: Path, rel: str) -> Path:
@@ -196,23 +215,41 @@ def preflight(plan: Plan, options: CopyOptions, *, create_dirs: bool = True) -> 
 
 # --------------------------------------------------------------------------- progress
 class _Tracker:
+    """Totals for the whole copy. Several files may be copied at once, so every change and every
+    report is made under one lock."""
+
     def __init__(self, total: int, callback: ProgressCallback | None) -> None:
         self.total = total
         self.copied = 0
         self.verified = 0
         self._cb = callback
+        self._lock = threading.Lock()
         self._last_emit = 0.0
         self._last_t = time.monotonic()
         self._last_bytes = 0
         self._speed = 0.0
-        self._stage = ""
+        self._stages: dict[str, str] = {}
+
+    def add(self, copied: int = 0, verified: int = 0) -> None:
+        with self._lock:
+            self.copied += copied
+            self.verified += verified
 
     def emit(self, rel: str, stage: str, done: int, size: int, *, force: bool = False) -> None:
         if self._cb is None:
             return
+        with self._lock:
+            self._emit(self._cb, rel, stage, done, size, force)
+
+    def _emit(
+        self, callback: ProgressCallback, rel: str, stage: str, done: int, size: int, force: bool
+    ) -> None:
         now = time.monotonic()
-        force = force or stage != self._stage  # a new stage is always reported
-        self._stage = stage
+        force = force or self._stages.get(rel) != stage  # a new stage of a file is always reported
+        if stage == "done":
+            self._stages.pop(rel, None)
+        else:
+            self._stages[rel] = stage
         if not force and now - self._last_emit < 0.1:
             return
         moved = self.copied + self.verified
@@ -228,9 +265,31 @@ class _Tracker:
             rel, stage, done, size, self.copied, self.verified, self.total, self._speed / 2, eta
         )
         try:
-            self._cb(report)
+            callback(report)
         except Exception:
             log.exception("progress callback failed")
+
+
+class _Attempt:
+    """What one attempt at one file added to the totals, so a failed attempt can be taken back
+    without touching what other files added meanwhile."""
+
+    def __init__(self, tracker: _Tracker) -> None:
+        self.tracker = tracker
+        self.copied = 0
+        self.verified = 0
+
+    def copy(self, n: int) -> None:
+        self.copied += n
+        self.tracker.add(copied=n)
+
+    def verify(self, n: int) -> None:
+        self.verified += n
+        self.tracker.add(verified=n)
+
+    def rollback(self) -> None:
+        self.tracker.add(-self.copied, -self.verified)
+        self.copied = self.verified = 0
 
 
 # --------------------------------------------------------------------------- single file
@@ -335,8 +394,7 @@ class _FileCopier:
             and existing.st_size == trusted.size == entry.size
             and existing.st_mtime_ns == trusted.mtime_ns == entry.mtime_ns
         ):
-            self.tracker.copied += entry.size
-            self.tracker.verified += entry.size
+            self.tracker.add(entry.size, entry.size)
             return _finish(result, FileOutcome.SKIPPED_TRUSTED, digest=trusted.hash_hex)
 
         if existing.st_size == entry.size:
@@ -352,13 +410,13 @@ class _FileCopier:
 
     def _identical(self, src: str, dst: str, entry: FileEntry) -> tuple[bool, str]:
         def counted(n: int) -> None:
-            self.tracker.verified += n
+            self.tracker.add(verified=n)
             self.tracker.emit(entry.rel, "verify", 0, entry.size)
 
         a, _ = hash_file(src, self.opt.algorithm, self.opt.chunk_bytes, self.control, None,
                          bypass_cache=False)  # fmt: skip
         b, _ = hash_file(dst, self.opt.algorithm, self.opt.chunk_bytes, self.control, counted)
-        self.tracker.copied += entry.size
+        self.tracker.add(copied=entry.size)
         return a == b, a
 
     # -- copy, with retries
@@ -371,14 +429,16 @@ class _FileCopier:
             result.attempts = attempt
             if self.hooks.on_attempt:
                 self.hooks.on_attempt(entry.rel, attempt)
-            before = (self.tracker.copied, self.tracker.verified)
+            counts = _Attempt(self.tracker)
             try:
-                result.hash_hex, result.cache_bypassed = self._attempt(src, dst, tmp, entry)
+                result.hash_hex, result.cache_bypassed = self._attempt(src, dst, tmp, entry, counts)
             except CopyCancelledError:
                 _quiet_unlink(tmp)
+                counts.rollback()
                 raise
             except FileExistsError:
                 _quiet_unlink(tmp)
+                counts.rollback()
                 result.outcome = FileOutcome.CONFLICT
                 result.error = "Another file appeared at the destination during the copy"
                 return result
@@ -392,7 +452,7 @@ class _FileCopier:
                     if isinstance(exc, RetryableCopyError)
                     else (f"{type(exc).__name__}: {exc}")
                 )
-                self.tracker.copied, self.tracker.verified = before  # discard the failed attempt
+                counts.rollback()  # discard the failed attempt
                 log.warning("copy attempt %d/%d failed for %s: %s", attempt,
                             self.opt.max_attempts, entry.rel, last_error)  # fmt: skip
                 if attempt < self.opt.max_attempts:
@@ -404,10 +464,12 @@ class _FileCopier:
         result.error = f"Failed after {self.opt.max_attempts} attempts: {last_error}"
         return result
 
-    def _attempt(self, src: str, dst: str, tmp: str, entry: FileEntry) -> tuple[str, bool]:
+    def _attempt(
+        self, src: str, dst: str, tmp: str, entry: FileEntry, counts: _Attempt
+    ) -> tuple[str, bool]:
         before = os.stat(src)
         self.control.checkpoint()
-        source_digest, total = self._stream_copy(src, tmp, entry)
+        source_digest, total = self._stream_copy(src, tmp, entry, counts)
         if total != before.st_size:
             raise SourceChangedError(
                 f"Source size changed while copying ({before.st_size} -> {total})"
@@ -416,7 +478,7 @@ class _FileCopier:
             self.hooks.after_write(Path(tmp))
 
         def counted(n: int) -> None:
-            self.tracker.verified += n
+            counts.verify(n)
             self.tracker.emit(entry.rel, "verify", total, entry.size)
 
         dest_digest, bypassed = hash_file(
@@ -440,28 +502,31 @@ class _FileCopier:
             os.rename(tmp, dst)  # on Windows this refuses to overwrite: no silent clobbering
         return source_digest, bypassed
 
-    def _stream_copy(self, src: str, tmp: str, entry: FileEntry) -> tuple[str, int]:
+    def _stream_copy(
+        self, src: str, tmp: str, entry: FileEntry, counts: _Attempt
+    ) -> tuple[str, int]:
+        """Copy while hashing the source. A second thread reads (and hashes) the next chunk while
+        this one writes the current one."""
         hasher = new_hasher(self.opt.algorithm)
-        buf = bytearray(self.opt.chunk_bytes)
-        view = memoryview(buf)
+        views = [
+            memoryview(bytearray(self.opt.chunk_bytes))
+            for _ in range(depth_for(self.opt.chunk_bytes))
+        ]
         total = 0
         try:
             with open(src, "rb", buffering=0) as fin, open(tmp, "wb", buffering=0) as fout:
-                while True:
-                    self.control.checkpoint()
-                    n = fin.readinto(buf)
-                    if not n:
-                        break
-                    piece = view[:n]
-                    hasher.update(piece)
-                    _write_all(fout, piece)
-                    piece.release()
-                    total += n
-                    self.tracker.copied += n
-                    self.tracker.emit(entry.rel, "copy", total, entry.size)
+                chunks = read_ahead(lambda i: fin.readinto(views[i]) or 0, views, hasher.update)
+                with contextlib.closing(chunks):
+                    for piece in chunks:
+                        self.control.checkpoint()
+                        _write_all(fout, piece)
+                        total += len(piece)
+                        counts.copy(len(piece))
+                        self.tracker.emit(entry.rel, "copy", total, entry.size)
                 os.fsync(fout.fileno())  # the data must be on disk before we read it back
         finally:
-            view.release()
+            for view in views:
+                view.release()
         return hasher.hexdigest(), total
 
 
@@ -486,14 +551,21 @@ def copy_tree(
     copier = _FileCopier(plan, options, control, tracker, hooks or Hooks(), sleep)
     results: list[FileResult] = []
     cancelled = False
+
+    def finished(entry: FileEntry, result: FileResult) -> None:
+        results.append(result)
+        if on_file_done:
+            on_file_done(result)
+        tracker.emit(entry.rel, "done", entry.size, entry.size, force=True)
+
     try:
-        for entry in plan.files:
-            control.checkpoint()
-            result = copier.copy(entry)
-            results.append(result)
-            if on_file_done:
-                on_file_done(result)
-            tracker.emit(entry.rel, "done", entry.size, entry.size, force=True)
+        workers = max(1, min(options.parallel_files, len(plan.files)))
+        if workers == 1:
+            for entry in plan.files:
+                control.checkpoint()
+                finished(entry, copier.copy(entry))
+        else:
+            _copy_in_parallel(plan, copier, control, workers, finished)
     except CopyCancelledError:
         cancelled = True
     finally:
@@ -503,6 +575,38 @@ def copy_tree(
     if tree.ok and options.write_checksum_file:
         tree.manifest_path = write_manifest(plan, options.algorithm, results)
     return tree
+
+
+def _copy_in_parallel(
+    plan: Plan,
+    copier: _FileCopier,
+    control: Control,
+    workers: int,
+    finished: Callable[[FileEntry, FileResult], None],
+) -> None:
+    """Copy ``workers`` files at the same time. Small files are mostly waiting (to open, to flush,
+    for the server to answer), so overlapping them is much faster. Every file still goes through
+    the whole verify-then-rename protocol on its own, and results are handed to ``finished`` on
+    this thread, in the order of the plan."""
+
+    def one(entry: FileEntry) -> FileResult:
+        control.checkpoint()
+        return copier.copy(entry)
+
+    pool = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="copyfile")
+    futures: list[tuple[FileEntry, Future[FileResult]]] = []
+    reported = 0
+    try:
+        futures = [(entry, pool.submit(one, entry)) for entry in plan.files]
+        for entry, future in futures:
+            finished(entry, future.result())
+            reported += 1
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)  # on a stop, running files end at once
+        # files that were already finished out of order are still recorded, not lost
+        for entry, future in futures[reported + 1 :]:
+            if future.done() and not future.cancelled() and future.exception() is None:
+                finished(entry, future.result())
 
 
 def write_manifest(plan: Plan, algorithm: str, results: list[FileResult]) -> Path:

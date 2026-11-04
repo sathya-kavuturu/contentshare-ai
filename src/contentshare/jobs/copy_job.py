@@ -58,6 +58,7 @@ def options_from_config(
         algorithm=c.hash_algorithm,
         write_checksum_file=c.write_checksum_file,
         chunk_bytes=c.chunk_mb * MIB,
+        parallel_files=c.files_at_once,
         max_attempts=c.max_attempts,
         free_space_margin_pct=c.free_space_margin_pct,
         overwrite=overwrite,

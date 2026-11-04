@@ -41,6 +41,10 @@ When a copy finishes, every file has been read back from the destination and com
 original:
 
 * A file that does not match is copied again (up to *Attempts per file*).
+* The data is forced onto the disk and then read back *from the disk*, not from Windows' memory, so a copy that only looked complete cannot pass.
+* A file is only given its real name after it has passed; until then it has the temporary ending `.cspartial`, which is removed if the copy stops.
+
+To be fast, the next piece of a file is read while the current piece is being written, and several files are copied at once (*Settings → Matching and copying → Files at the same time*). Neither changes the checking: each file is compared on its own, and a file that fails is never put under its real name.
 * If it still fails the request shows **✖ Failed**, and no "shared" reply can be sent.
 
 If you quit, or the PC restarts, in the middle of a copy it **continues from where it stopped**
@@ -56,6 +60,12 @@ dry-run mode nothing is sent.
 ## History
 
 Every request with a step-by-step record of what happened. **Export CSV** saves it for Excel.
+
+The **Copy time** column shows how long the last copy of each request took, from the first file to the last
+check (for example `2 min 05 s`). Select a request to also see its average speed. That speed counts the
+whole job, which includes reading every file back to check it, so it is lower than a plain copy would show.
+If a copy was paused, the time it stood still is included. A request that has not been copied yet, or was
+only a dry run, shows nothing. The CSV has the same figure in seconds (`copy_seconds`).
 
 ## The automatic check, the tray and pop-ups
 

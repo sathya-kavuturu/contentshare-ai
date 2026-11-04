@@ -84,6 +84,7 @@ senders are ever read. Use **Add…**, **Edit…** (or double-click) and **Remov
 | **Verification checksum** | How copies are compared with the originals: `xxh3_128` (fastest, the default), `blake3`, or `sha256`. All are reliable for catching damaged copies. |
 | **Keep a checksum file in each copied folder** | Off by default. Every file is already checked against the original while it is copied, whether or not this is on. Switch it on to also leave a `<folder>.checksums` file beside the copy, which anyone can use later to check the files again (`xxhsum -c`, `sha256sum -c`). |
 | **Copies at the same time** | 1–4 programs copied together. Use 1 if the network share struggles. |
+| **Files at the same time** | 1–8 files of one program copied together (default 4). Many small files copy much faster this way, because each one spends most of its time waiting for the disk or the server. Every file is still checked on its own. Use 1 if the storage server or the destination disk struggles with several at once. |
 | **Attempts per file** | How many times a file that fails verification is copied again before the request shows **Failed**. |
 
 Lower the Ready score only after checking real matches in the review list: a wrong automatic

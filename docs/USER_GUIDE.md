@@ -75,6 +75,9 @@ as soon as the copy is verified. Replies go only to the person who asked, in the
 
 Every request, with a step-by-step record of what happened. **Export CSV** saves it for Excel.
 
+The **Copy time** column shows how long each request took to copy and check; select a request to
+see its average speed too.
+
 ## 8. The automatic check, tray and pop-ups
 
 * To see more requests at once, fold them: the arrow on a card folds it to one line, and **Collapse

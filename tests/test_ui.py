@@ -521,6 +521,24 @@ def test_history_lists_filters_and_exports(
     assert "Exported" in rig.window.statusBar().currentMessage()
 
 
+def test_history_shows_the_copy_time_of_each_request(rig: Rig, qtbot: Any) -> None:
+    from contentshare.ui.history_page import COLUMNS
+
+    rig.ready_mail()
+    page = rig.window.history
+    column = COLUMNS.index("Copy time")
+    page.refresh()
+    assert page.table.item(0, column).text() == ""  # nothing copied yet
+    card = rig.cards()[0]
+    card.confirm.setChecked(True)
+    rig.click(card, "Approve and copy")
+    qtbot.waitUntil(lambda: rig.controller.views()[0].state == "VERIFIED", timeout=20000)
+    page.refresh()
+    assert page.table.item(0, column).text().endswith(" s")
+    page.table.selectRow(0)
+    assert "Copy time:" in page.detail.toPlainText()
+
+
 def test_history_export_failure_is_reported(
     rig: Rig, monkeypatch: pytest.MonkeyPatch, boxes: Boxes, tmp_path: Path
 ) -> None:

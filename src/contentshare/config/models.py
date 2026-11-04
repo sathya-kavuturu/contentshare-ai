@@ -172,6 +172,8 @@ class CopySettings(BaseModel):
     write_checksum_file: bool = False
     chunk_mb: Annotated[int, Field(ge=1, le=64)] = 8
     concurrency: Annotated[int, Field(ge=1, le=4)] = 2
+    # Files of one request copied at the same time. Each is still checked on its own.
+    files_at_once: Annotated[int, Field(ge=1, le=8)] = 4
     max_attempts: Annotated[int, Field(ge=1, le=10)] = 3
     free_space_margin_pct: Annotated[int, Field(ge=0, le=50)] = 5
 

@@ -98,7 +98,10 @@ def _copy_engine() -> str:
         dst.mkdir()
         (src / "a.bin").write_bytes(os.urandom(300_000))
         (src / "sub" / "b.txt").write_text("hello", encoding="utf-8")
-        result = copy_tree(build_plan(src, dst / "out"), CopyOptions(chunk_bytes=64 * 1024))
+        result = copy_tree(
+            build_plan(src, dst / "out"),
+            CopyOptions(chunk_bytes=64 * 1024, parallel_files=2),
+        )
         if not result.ok or len(result.files) != 2:
             raise RuntimeError("verified copy failed")
         same = (src / "a.bin").read_bytes() == (dst / "out" / "a.bin").read_bytes()

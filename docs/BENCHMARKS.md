@@ -1,5 +1,30 @@
 # Copy benchmarks
 
+## Latest (2026-11-04): read-ahead and several files at once
+
+Same method and dataset as below (301 files, 1.84 GiB, same local disk, best of 2 runs, Windows 11,
+Python 3.14.5), after the next piece of each file began to be read while the current one is written,
+and several files started to be copied at the same time. Every file is still copied, flushed to disk,
+read back from the disk, compared and only then renamed.
+
+| Method | Verified | Best time | Throughput |
+|---|---|---:|---:|
+| shutil.copy2 | no | 1.0 s | 1,924 MB/s (cache artefact) |
+| robocopy /J (unbuffered) | no | 2.1 s | 900 MB/s |
+| ContentShare, 1 file at a time | yes | 9.7 s | 194 MB/s |
+| **ContentShare, 4 files at a time (xxh3_128, the default)** | **yes** | **6.0 s** | **316 MB/s** |
+| ContentShare, 4 at a time (blake3) | yes | 6.1 s | 310 MB/s |
+| ContentShare, 4 at a time (sha256) | yes | 6.4 s | 296 MB/s |
+
+The earlier run below measured 144 MB/s for the one-at-a-time engine; the machine's disk and virus
+scanner differ from run to run (robocopy /J went from 126 to 900 MB/s between the two days), so compare
+rows **within** one table, not across tables. A single large file now copies about 40% faster than
+before (about 650 to 900 MB/s, measured by itself), and 400 small files about 1.5 to 2.3 times as fast
+with 4 at a time. Over a network share the gain depends on the share; try
+*Settings → Matching and copying → Files at the same time* at 1, 2, 4 and 8 and keep what is fastest.
+
+## Earlier (2026-11-03): one file at a time
+
 Measured 2026-11-03 on the development PC (Windows 11, NTFS, Python 3.14.5). Source and
 destination are on the **same local disk**, so this shows relative cost, not network speed.
 Dataset: 301 files, 1.84 GiB (one 1.5 GiB file + 300 clips of 0.25–2 MB, random data). Best of 2 runs.

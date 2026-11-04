@@ -30,7 +30,9 @@ from contentshare.ui.timefmt import local_stamp
 from contentshare.ui.widgets import Combo, page_header
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
-COLUMNS = ["#", "Received", "From", "Department", "Requested", "Status", "Files", "Size"]
+COLUMNS = [
+    "#", "Received", "From", "Department", "Requested", "Status", "Files", "Size", "Copy time",
+]  # fmt: skip
 STATUS_COLUMN = COLUMNS.index("Status")
 
 
@@ -148,7 +150,7 @@ class HistoryPage(QWidget):
                 f"{v.sender_name or v.sender_email}", v.department or "—", v.requested,
                 style_for(v.state).text,
                 str(v.file_count) if v.file_count is not None else "",
-                v.size_text,
+                v.size_text, v.copy_time_text,
             ]  # fmt: skip
             tone = current_theme().tones.get(style_for(v.state).tone)
             for col, text in enumerate(cells):
@@ -180,6 +182,9 @@ class HistoryPage(QWidget):
             f"Source: {view.source_path or '—'}",
             f"Destination: {view.destination_path or '—'}",
         ]
+        if view.copy_seconds is not None:
+            speed = f" · {view.copy_speed_text} on average" if view.copy_speed_text else ""
+            parts.append(f"Copy time: {view.copy_time_text}{speed}")
         if view.failure_reason:
             parts.append(f"Failure: {view.failure_reason}")
         for reply in replies:

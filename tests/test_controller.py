@@ -18,8 +18,10 @@ from contentshare.app.controller import (
     describe_item,
 )
 from contentshare.config.store import load_config
+from contentshare.copy_engine import format_duration
 from contentshare.gmail.errors import AuthRequiredError
 from contentshare.jobs.states import RequestState as S
+from contentshare.storage import repository as repository_module
 from contentshare.storage.db import Database
 from fake_gmail import auth_header, make_message
 from helpers import TODAY, MailWorld, build_mail_world
@@ -532,3 +534,64 @@ def test_csv_safe() -> None:
 def test_open_gmail_thread_ids_are_exposed(h: Harness) -> None:
     v = h.ready()
     assert v.gmail_thread_id and v.gmail_message_id
+
+
+# --------------------------------------------------------------------------- copy time
+def test_history_shows_how_long_the_copy_took(h: Harness, tmp_path: Path) -> None:
+    v = h.ready()
+    assert v.copy_seconds is None and v.copy_time_text == "" and v.copy_speed_text == ""
+    h.ctl.approve(v.id, confirmed=True)
+    h.wait_copy(v.id)
+    after = h.ctl.view(v.id)
+    assert after.copy_seconds is not None and 0 <= after.copy_seconds < 30
+    assert after.copy_time_text
+    out = tmp_path / "history.csv"
+    h.ctl.export_history(out)
+    with out.open(encoding="utf-8-sig", newline="") as fh:
+        rows = {int(r["request"]): r for r in csv.DictReader(fh)}
+    assert float(rows[v.id]["copy_seconds"]) == pytest.approx(after.copy_seconds, abs=0.06)
+
+
+def test_copy_time_is_that_of_the_last_finished_job(
+    h: Harness, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    v = h.ready()
+    repo = h.world.repo
+    stamps = iter(
+        [
+            "2026-11-04T10:00:00.000+00:00", "2026-11-04T10:02:05.500+00:00",  # 125.5 s
+            "2026-11-04T11:00:00.000+00:00",  # a job that never finished (crash)
+            "2026-11-04T12:00:00.250+00:00", "2026-11-04T12:00:03.000+00:00",  # 2.75 s
+        ]
+    )  # fmt: skip
+    monkeypatch.setattr(repository_module, "_now_precise", lambda: next(stamps))
+    first, _ = repo.create_job(v.id)
+    repo.finish_job(first, "FAILED", "network")
+    assert h.ctl.view(v.id).copy_seconds == pytest.approx(125.5, abs=0.01)
+    repo.create_job(v.id)  # started, never finished: ignored
+    assert h.ctl.view(v.id).copy_seconds == pytest.approx(125.5, abs=0.01)
+    third, _ = repo.create_job(v.id)
+    repo.finish_job(third, "DONE")
+    assert h.ctl.view(v.id).copy_seconds == pytest.approx(2.75, abs=0.01)
+
+
+@pytest.mark.parametrize(
+    ("seconds", "text"),
+    [
+        (0.2, "< 1 s"),
+        (4.24, "4.2 s"),
+        (38.4, "38 s"),
+        (125, "2 min 05 s"),
+        (3599.4, "59 min 59 s"),
+        (3725, "1 h 02 min"),
+    ],
+)
+def test_format_duration(seconds: float, text: str) -> None:
+    assert format_duration(seconds) == text
+
+
+def test_copy_speed_text_is_the_average_over_the_whole_job(h: Harness) -> None:
+    v = h.ready()
+    view = RequestView(**{**v.__dict__, "total_bytes": 50 * 1024 * 1024, "copy_seconds": 10.0})
+    assert view.copy_speed_text == "5.0 MB/s"
+    assert RequestView(**{**v.__dict__, "copy_seconds": 0.0}).copy_speed_text == ""

@@ -25,7 +25,14 @@ from typing import Any
 
 from contentshare.config.models import AppConfig, Department
 from contentshare.config.store import save_config
-from contentshare.copy_engine import PreflightError, Progress, build_plan, format_bytes, preflight
+from contentshare.copy_engine import (
+    PreflightError,
+    Progress,
+    build_plan,
+    format_bytes,
+    format_duration,
+    preflight,
+)
 from contentshare.gmail.auth import GmailAuth, required_scopes
 from contentshare.gmail.errors import AuthRequiredError, GmailError
 from contentshare.gmail.gateway import GmailGateway
@@ -132,6 +139,18 @@ class RequestView:
     updated_at: str
     gmail_thread_id: str
     gmail_message_id: str
+    copy_seconds: float | None = None  # how long the last copy of it took, if one finished
+
+    @property
+    def copy_time_text(self) -> str:
+        return format_duration(self.copy_seconds) if self.copy_seconds is not None else ""
+
+    @property
+    def copy_speed_text(self) -> str:
+        """Average speed of the whole job: the files were copied, flushed and read back."""
+        if not self.copy_seconds or not self.total_bytes:
+            return ""
+        return f"{format_bytes(self.total_bytes / self.copy_seconds)}/s"
 
     @property
     def verified_sender(self) -> bool:
@@ -154,6 +173,10 @@ def describe_item(data: dict[str, Any]) -> str:
     if data.get("part"):
         parts.append(f"{data['part'][0]} {data['part'][1]}")
     return " · ".join(parts)
+
+
+def _seconds(value: object) -> float | None:
+    return max(0.0, float(value)) if isinstance(value, int | float) else None
 
 
 def make_view(row: dict[str, Any]) -> RequestView:
@@ -195,6 +218,7 @@ def make_view(row: dict[str, Any]) -> RequestView:
         updated_at=str(row.get("updated_at") or ""),
         gmail_thread_id=str(row.get("gmail_thread_id") or ""),
         gmail_message_id=str(row.get("gmail_message_id") or ""),
+        copy_seconds=_seconds(row.get("copy_seconds")),
     )
 
 
@@ -229,7 +253,7 @@ class _Live:
 _FORMULA_START = ("=", "+", "-", "@", "\t", "\r")
 HISTORY_COLUMNS = [
     "request", "received", "from", "department", "subject", "requested", "state", "source",
-    "destination", "files", "bytes", "sender_check", "failure",
+    "destination", "files", "bytes", "copy_seconds", "sender_check", "failure",
 ]  # fmt: skip
 
 
@@ -916,6 +940,7 @@ class Controller:
                         v.state, csv_safe(v.source_path), csv_safe(v.destination_path),
                         v.file_count if v.file_count is not None else "",
                         v.total_bytes if v.total_bytes is not None else "",
+                        f"{v.copy_seconds:.1f}" if v.copy_seconds is not None else "",
                         v.auth_status, csv_safe(v.failure_reason),
                     ]
                 )  # fmt: skip
