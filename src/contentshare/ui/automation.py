@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
@@ -45,6 +45,7 @@ class Automation(QObject):
             last_check=self.controller.last_check(),
             run_missed=c.schedule.run_missed_check_on_startup,
             enabled=self._can_run(),
+            every=self._every(),
         )
         self._timer.start()
 
@@ -53,10 +54,16 @@ class Automation(QObject):
 
     def config_changed(self) -> None:
         c = self.controller.config
-        self.scheduler.reconfigure(c.schedule.daily_check_time, enabled=self._can_run())
+        self.scheduler.reconfigure(
+            c.schedule.daily_check_time, enabled=self._can_run(), every=self._every()
+        )
 
     def _can_run(self) -> bool:
         return self.controller.config.schedule.daily_check_enabled
+
+    def _every(self) -> timedelta | None:
+        minutes = self.controller.config.schedule.check_every_minutes
+        return timedelta(minutes=minutes) if minutes else None
 
     # ------------------------------------------------------------------ running
     def next_run(self) -> datetime | None:

@@ -164,6 +164,75 @@ def test_changing_the_time_never_triggers_a_check_by_itself() -> None:
     assert sched.poll() is None
 
 
+# ----- every so often, instead of once a day
+HOUR = timedelta(hours=1)
+
+
+def test_an_interval_schedule_checks_again_that_long_after_the_last_check() -> None:
+    sched, clock = make_scheduler(at(3, 10))
+    sched.start("09:00", last_check=at(3, 9, 30), run_missed=True, every=HOUR)
+    assert sched.next_run == at(3, 10, 30)
+    clock.t = at(3, 10, 29)
+    assert sched.poll() is None
+    clock.t = at(3, 10, 31)
+    due = sched.poll()
+    assert due is not None and due.reason == "scheduled"
+    clock.t = at(3, 10, 32)
+    assert sched.finished(ok=True) == at(3, 11, 32)  # counted from when this one finished
+    assert sched.poll() is None
+
+
+def test_an_overdue_interval_check_runs_shortly_after_start() -> None:
+    sched, clock = make_scheduler(at(3, 10))
+    sched.start("09:00", last_check=at(3, 6), run_missed=True, every=HOUR)
+    assert sched.poll() is None  # not before the start-up delay
+    clock.advance(seconds=STARTUP_DELAY.total_seconds() + 1)
+    due = sched.poll()
+    assert due is not None and due.reason == "missed"
+
+
+def test_an_overdue_interval_check_waits_when_missed_checks_are_off() -> None:
+    sched, clock = make_scheduler(at(3, 10))
+    sched.start("09:00", last_check=at(3, 6), run_missed=False, every=HOUR)
+    assert sched.next_run == at(3, 11)
+    clock.advance(minutes=5)
+    assert sched.poll() is None
+
+
+def test_changing_to_an_interval_never_triggers_a_check_by_itself() -> None:
+    sched, clock = make_scheduler(at(3, 10))
+    sched.start("09:00", last_check=at(3, 9, 1), run_missed=True)
+    sched.reconfigure("09:00", every=timedelta(minutes=30))
+    assert sched.next_run == at(3, 10, 30)
+    assert sched.poll() is None
+    sched.reconfigure("09:00")  # back to once a day
+    assert sched.next_run == at(4, 9)
+
+
+def test_failed_interval_checks_still_retry_then_wait_the_interval() -> None:
+    sched, clock = make_scheduler(at(3, 10))
+    sched.start("09:00", last_check=at(3, 9, 30), run_missed=False, every=HOUR)
+    clock.t = at(3, 10, 31)
+    for delay in RETRY_DELAYS:
+        assert sched.poll() is not None
+        nxt = sched.finished(ok=False)
+        assert nxt == clock.t + delay
+        clock.t = nxt
+    assert sched.poll() is not None
+    assert sched.finished(ok=False) == clock.t + HOUR
+
+
+def test_the_check_interval_setting_accepts_only_the_offered_choices() -> None:
+    from contentshare.config.models import CHECK_INTERVALS, ScheduleSettings
+
+    assert ScheduleSettings().check_every_minutes == 0  # old settings files: once a day
+    for minutes in CHECK_INTERVALS:
+        assert ScheduleSettings(check_every_minutes=minutes).check_every_minutes == minutes
+    for bad in (-5, 7, 90, 1000):
+        with pytest.raises(ValueError, match="Check interval"):
+            ScheduleSettings(check_every_minutes=bad)
+
+
 def test_disabled_scheduler_stays_quiet() -> None:
     sched, clock = make_scheduler(at(3, 10))
     sched.start("09:00", last_check=None, run_missed=True, enabled=False)
@@ -569,7 +638,7 @@ def test_settings_apply_start_with_windows_and_report_refusals(
     with qtbot.waitSignal(page.saved):
         assert page.save()
     assert rig.startup.registry.get() == "cmd"
-    assert "Starts with Windows" in page.start_note.text()
+    qtbot.waitUntil(lambda: "Starts with Windows" in page.start_note.text())
     assert rig.controller.config.schedule.start_with_windows
 
     def refuse(_wanted: bool) -> None:
@@ -579,6 +648,25 @@ def test_settings_apply_start_with_windows_and_report_refusals(
     monkeypatch.setattr(rig.startup, "apply", refuse)
     assert page.save()  # the other settings are still saved
     assert "would not let ContentShare" in page.message.text()
+
+
+def test_the_settings_screen_saves_the_check_interval_and_moves_the_next_check(
+    rig: Rig,
+) -> None:
+    rig.automation.start()
+    page = rig.window.settings
+    page.load()
+    assert page.every.currentData() == 0 and page.check_time.isEnabled()
+    page.every.setCurrentIndex(page.every.findData(30))
+    assert not page.check_time.isEnabled()  # a time of day means nothing for "every 30 minutes"
+    assert page.save()
+    assert rig.controller.config.schedule.check_every_minutes == 30
+    gap = rig.automation.next_run() - rig.clock()  # type: ignore[operator]
+    assert gap <= timedelta(minutes=30)
+    shown = [page.every.itemText(i) for i in range(page.every.count())]
+    assert shown[0] == "Once a day, at a set time"
+    assert shown[1:4] == ["Every 15 minutes", "Every 30 minutes", "Every hour"]
+    assert shown[-1] == "Every 12 hours"
 
 
 def test_changing_settings_moves_the_next_check(rig: Rig, qtbot: Any) -> None:

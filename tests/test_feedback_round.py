@@ -10,7 +10,9 @@ import pytest
 from PySide6.QtWidgets import QApplication, QFileDialog, QLineEdit, QWizard
 
 from contentshare.config.models import AppConfig
+from contentshare.config.store import load_config
 from contentshare.ui.folder_list import ROW_HEIGHT, FolderList
+from contentshare.ui.main_window import PAGES
 from contentshare.ui.theme import THEME_PROPERTY, apply_theme, theme_for
 from contentshare.ui.timefmt import local_stamp
 from contentshare.ui.wizard import FirstRunWizard
@@ -42,14 +44,14 @@ def test_a_plain_date_empty_text_and_odd_text_are_not_turned_into_something_else
     assert local_stamp("not a time") == "not a time"
 
 
-def test_the_index_tab_shows_the_scan_time_on_the_local_clock(rig: Any) -> None:  # noqa: F811
+def test_the_index_tab_shows_the_scan_time_on_the_local_clock(rig: Any, qtbot: Any) -> None:  # noqa: F811
     page = rig.window.settings
     stored = "2026-11-03T12:51:48+00:00"
     rig.controller.index_summary = lambda: {  # type: ignore[method-assign]
         "items": 5, "folders": 2, "last_scan": stored, "roots": 1,
     }  # fmt: skip
     page._refresh_status()
-    assert local_stamp(stored) in page.index_state.text()
+    qtbot.waitUntil(lambda: local_stamp(stored) in page.index_state.text())
 
 
 # --------------------------------------------------------------------------- appearance
@@ -86,19 +88,44 @@ def test_settings_offer_light_dark_and_same_as_windows(rig: Any) -> None:  # noq
     assert page.collect().appearance == "dark"
 
 
-def test_choosing_dark_shows_it_at_once_and_saving_keeps_it(rig: Any) -> None:  # noqa: F811
+def test_choosing_a_theme_shows_it_and_remembers_it_at_once(rig: Any) -> None:  # noqa: F811
     page, app = rig.window.settings, _app()
     apply_theme(app, theme_for("light", app))
     page.appearance.setCurrentIndex(page.appearance.findData("dark"))
     page.appearance.activated.emit(page.appearance.currentIndex())
     assert app.property(THEME_PROPERTY) == "dark"
-    assert page.save()
-    assert rig.controller.config.appearance == "dark"
+    assert rig.controller.config.appearance == "dark"  # no need to press Save
+    assert load_config(rig.controller._config_path).appearance == "dark"  # and it is on disk
     page.appearance.setCurrentIndex(page.appearance.findData("light"))
     page.appearance.activated.emit(page.appearance.currentIndex())
-    assert app.property(THEME_PROPERTY) == "light"
-    page.load()  # Revert: back to the saved choice, on screen too
+    assert app.property(THEME_PROPERTY) == "light" and rig.controller.config.appearance == "light"
+
+
+def test_opening_settings_again_neither_restyles_nor_loses_what_was_typed(
+    rig: Any,  # noqa: F811
+) -> None:
+    app, window = _app(), rig.window
+    page = window.settings
+    page.appearance.setCurrentIndex(page.appearance.findData("dark"))
+    page.appearance.activated.emit(page.appearance.currentIndex())
+    apply_theme(app, theme_for("dark", app))
+    app.setStyleSheet("/* marker */")  # a restyle would replace this
+    page.default_reply.setPlainText("typed but not saved")
+    window.nav.setCurrentRow(0)
+    window.nav.setCurrentRow(PAGES.index("Settings"))
+    assert app.styleSheet() == "/* marker */"
     assert page._appearance() == "dark" and app.property(THEME_PROPERTY) == "dark"
+    assert page.default_reply.toPlainText() == "typed but not saved"
+
+
+def test_settings_are_filled_in_again_when_they_changed_elsewhere(rig: Any) -> None:  # noqa: F811
+    window, page = rig.window, rig.window.settings
+    page.load()
+    config = rig.controller.config.model_copy(update={"dry_run": not rig.controller.config.dry_run})
+    rig.controller.apply_config(config, persist=False)
+    window.nav.setCurrentRow(0)
+    window.nav.setCurrentRow(PAGES.index("Settings"))
+    assert page.dry_run.isChecked() == config.dry_run
 
 
 def test_help_follows_the_theme_change(rig: Any) -> None:  # noqa: F811

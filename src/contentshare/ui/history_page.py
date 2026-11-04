@@ -9,7 +9,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView,
-    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
@@ -28,8 +27,8 @@ from contentshare.ui.context import UiContext
 from contentshare.ui.status import STATUS, style_for
 from contentshare.ui.theme import current_theme
 from contentshare.ui.timefmt import local_stamp
+from contentshare.ui.widgets import Combo, page_header
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
-from contentshare.ui.widgets import page_header
 
 COLUMNS = ["#", "Received", "From", "Department", "Requested", "Status", "Files", "Size"]
 STATUS_COLUMN = COLUMNS.index("Status")
@@ -79,7 +78,7 @@ class HistoryPage(QWidget):
         self.search.setAccessibleName("Search history")
         self.search.setMinimumWidth(260)
         self.search.textChanged.connect(lambda _t: self.refresh())
-        self.state = QComboBox()
+        self.state = Combo()
         self.state.setAccessibleName("Status")
         self.state.addItem("All statuses", None)
         for key, style in STATUS.items():

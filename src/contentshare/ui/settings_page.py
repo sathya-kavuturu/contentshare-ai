@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from pydantic import ValidationError
 from PySide6.QtCore import Qt, QTime, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QAbstractSpinBox,
     QCheckBox,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
@@ -31,20 +32,33 @@ from PySide6.QtWidgets import (
 )
 
 import contentshare
-from contentshare.config.models import AppConfig, Department
+from contentshare.app.controller import ActionError
+from contentshare.config.models import CHECK_INTERVALS, AppConfig, Department
 from contentshare.config.templates import REPLY_PLACEHOLDERS, SUBFOLDER_PLACEHOLDERS
 from contentshare.ui.context import UiContext
 from contentshare.ui.folder_list import FolderList
 from contentshare.ui.pickers import choose_file, choose_folder
 from contentshare.ui.timefmt import local_stamp
+from contentshare.ui.widgets import Combo, page_header
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
-from contentshare.ui.widgets import page_header
 
 log = logging.getLogger(__name__)
 
 HASHES = ["xxh3_128", "blake3", "sha256"]
 APPEARANCES = [("system", "Same as Windows"), ("light", "Light"), ("dark", "Dark")]
+SLOW_OPEN_MS = 250  # a Settings screen slower than this to appear is written to the log
+
+
+def interval_text(minutes: int) -> str:
+    if minutes == 0:
+        return "Once a day, at a set time"
+    if minutes < 60:
+        return f"Every {minutes} minutes"
+    hours = minutes // 60
+    return "Every hour" if hours == 1 else f"Every {hours} hours"
+
+
 ANYWHERE_HINT = (
     "Lets you pick a folder or file with Browse from anywhere on this PC or network, not only "
     "inside the storage folders (never inside Windows or Program Files, or a whole drive). "
@@ -182,6 +196,9 @@ class SettingsPage(QWidget):
         self.setObjectName("page")
         self.ctx = ctx
         self.departments: list[Department] = []
+        self._loaded: AppConfig | None = None  # the settings the boxes were last filled from
+        self._shown_appearance: str | None = None  # the theme last put on screen
+        self._status_generation = 0
         root = QVBoxLayout(self)
         root.setContentsMargins(32, 28, 26, 16)
         root.setSpacing(14)
@@ -207,6 +224,10 @@ class SettingsPage(QWidget):
         bar.addWidget(revert)
         bar.addWidget(self.save_button)
         root.addLayout(bar)
+        for box in self.findChildren(QAbstractSpinBox):
+            # The style sheet's left padding does not reach a number box's text, which then
+            # touched the border.
+            box.lineEdit().setTextMargins(8, 0, 0, 0)
         self.load()
 
     # ------------------------------------------------------------------ tabs
@@ -236,27 +257,31 @@ class SettingsPage(QWidget):
     def _build_general(self) -> None:
         form = self._tab("General")
         self._section(form, "Appearance", first=True)
-        self.appearance = QComboBox()
+        self.appearance = Combo()
         self.appearance.setAccessibleName("Appearance")
         self.appearance.setMaximumWidth(260)
         for value, text in APPEARANCES:
             self.appearance.addItem(text, value)
-        self.appearance.activated.connect(
-            lambda _i: self.appearance_changed.emit(self._appearance())
-        )
+        self.appearance.activated.connect(lambda _i: self._appearance_chosen())
         form.addRow("Theme", self.appearance)
 
-        self._section(form, "Daily check")
-        self.daily_enabled = QCheckBox("Check for requests every day")
+        self._section(form, "Automatic check")
+        self.daily_enabled = QCheckBox("Check for requests automatically")
+        self.every = Combo()
+        self.every.setAccessibleName("How often to check")
+        self.every.setMaximumWidth(260)
+        for minutes in CHECK_INTERVALS:
+            self.every.addItem(interval_text(minutes), minutes)
+        self.every.currentIndexChanged.connect(lambda _i: self._show_interval())
         self.check_time = QTimeEdit()
         self.check_time.setDisplayFormat("HH:mm")
         self.check_time.setAccessibleName("Daily check time")
         self.check_time.setMaximumWidth(140)
-        self.missed = QCheckBox(
-            "Check for requests when the app starts if the daily check was missed"
-        )
+        self.missed = QCheckBox("Check for requests when the app starts if a check was missed")
         form.addRow("", self.daily_enabled)
-        form.addRow("Daily check at", self.check_time)
+        form.addRow("How often", self.every)
+        self.time_label = QLabel("Time of day")
+        form.addRow(self.time_label, self.check_time)
         form.addRow("", self.missed)
 
         self._section(form, "Windows")
@@ -369,6 +394,9 @@ class SettingsPage(QWidget):
         self.connect_button.clicked.connect(self._connect)
         self.disconnect_button = QPushButton("Disconnect")
         self.disconnect_button.clicked.connect(self._disconnect)
+        self.gmail_state.setText("Checking…")  # the real answer is read in the background
+        self.connect_button.setEnabled(False)
+        self.disconnect_button.setEnabled(False)
         buttons = QHBoxLayout()
         buttons.addWidget(self.gmail_state, 1)
         buttons.addWidget(self.connect_button)
@@ -406,7 +434,7 @@ class SettingsPage(QWidget):
         self.gap.setRange(0, 50)
         self.gap.setMaximumWidth(160)
         self.keep_checksums = QCheckBox("Keep a checksum file in each copied folder")
-        self.hash = QComboBox()
+        self.hash = Combo()
         self.hash.addItems(HASHES)
         self.hash.setMaximumWidth(220)
         self.concurrency = QSpinBox()
@@ -446,18 +474,35 @@ class SettingsPage(QWidget):
         form.addRow("", note)
 
     # ------------------------------------------------------------------ load / save
+    def show_page(self) -> None:
+        """The Settings tab was opened. The boxes are filled again only if the settings changed
+        somewhere else since (an unsaved edit is kept), and the slow readings (Gmail sign-in,
+        Windows start-up, index size) are made in the background."""
+        started = time.perf_counter()
+        if self._loaded is not self.ctx.controller.config:
+            self.load()
+        else:
+            self._refresh_status()
+        elapsed = (time.perf_counter() - started) * 1000
+        if elapsed > SLOW_OPEN_MS:
+            log.info("Settings took %d ms to fill in", elapsed)
+
     def load(self) -> None:
         c = self.ctx.controller.config
+        self._loaded = c
         hour, minute = (int(p) for p in c.schedule.daily_check_time.split(":"))
         self.check_time.setTime(QTime(hour, minute))
+        self.every.setCurrentIndex(max(0, self.every.findData(c.schedule.check_every_minutes)))
+        self._show_interval()
         self.appearance.setCurrentIndex(self.appearance.findData(c.appearance))
-        self.appearance_changed.emit(c.appearance)  # also undoes an unsaved preview (Revert)
+        if c.appearance != self._shown_appearance:  # the same theme again would restyle everything
+            self._shown_appearance = c.appearance
+            self.appearance_changed.emit(c.appearance)
         self.missed.setChecked(c.schedule.run_missed_check_on_startup)
         self.daily_enabled.setChecked(c.schedule.daily_check_enabled)
         self.to_tray.setChecked(c.schedule.close_to_tray)
         self.notify.setChecked(c.schedule.notifications)
         self.start_login.setChecked(c.schedule.start_with_windows)
-        self._show_startup_note()
         self.auto_default.setChecked(c.auto_reply_default)
         self.dry_run.setChecked(c.dry_run)
         self.check_updates.setChecked(c.updates.check_on_start)
@@ -484,6 +529,7 @@ class SettingsPage(QWidget):
         base: dict[str, Any] = self.ctx.controller.config.model_dump()
         base["schedule"].update(
             daily_check_time=self.check_time.time().toString("HH:mm"),
+            check_every_minutes=int(self.every.currentData() or 0),
             run_missed_check_on_startup=self.missed.isChecked(),
             daily_check_enabled=self.daily_enabled.isChecked(),
             close_to_tray=self.to_tray.isChecked(),
@@ -532,23 +578,42 @@ class SettingsPage(QWidget):
         except Exception as exc:
             self.ctx.fail(self, "Settings not saved", exc)
             return False
+        self._loaded = self.ctx.controller.config
         problem = self._apply_startup(config.schedule.start_with_windows)
         self.message.setText(f"Settings saved. {problem}".strip())
         self.ctx.say("Settings saved")
         self._refresh_status()
-        self._show_startup_note()
         self.saved.emit()
         return True
 
     def _appearance(self) -> str:
         return str(self.appearance.currentData() or "system")
 
-    # ------------------------------------------------------------------ start at login
-    def _show_startup_note(self) -> None:
-        text = self._startup_text()
-        self.start_note.setText(text)
-        self.start_note.setVisible(bool(text))
+    def _appearance_chosen(self) -> None:
+        """The theme is shown and remembered at once: it is a personal preference, and a preview
+        that came undone whenever Settings was opened again was confusing."""
+        value = self._appearance()
+        self._shown_appearance = value
+        self.appearance_changed.emit(value)
+        controller = self.ctx.controller
+        if value == controller.config.appearance:
+            return
+        keep_edits = self._loaded is controller.config
+        try:
+            controller.set_appearance(value)
+        except (ActionError, OSError, ValueError) as exc:
+            self.message.setText(f"The theme could not be remembered ({exc}).")
+            return
+        if keep_edits:
+            self._loaded = controller.config
 
+    def _show_interval(self) -> None:
+        """The time of day matters only for the once-a-day schedule."""
+        daily = int(self.every.currentData() or 0) == 0
+        self.check_time.setEnabled(daily)
+        self.time_label.setEnabled(daily)
+
+    # ------------------------------------------------------------------ start at login
     def _startup_text(self) -> str:
         startup = self.ctx.startup
         if startup is None:
@@ -614,17 +679,33 @@ class SettingsPage(QWidget):
             self.secret.setText(path)
 
     def _refresh_status(self) -> None:
+        """Gmail sign-in, the Windows start-up entry and the index size are read in the
+        background (the credential store, Task Scheduler and a large index can each be slow),
+        and shown when ready. A late answer from an older request is ignored."""
         controller = self.ctx.controller
-        connected = controller.gmail_connected()
+        self._status_generation += 1
+        generation = self._status_generation
+
+        def read() -> tuple[bool, dict[str, Any], str]:
+            return controller.gmail_connected(), controller.index_summary(), self._startup_text()
+
+        def show(result: tuple[bool, dict[str, Any], str]) -> None:
+            if generation == self._status_generation:
+                self._show_status(*result)
+
+        self.ctx.bridge.work(read, show, lambda exc: log.warning("settings status: %r", exc))
+
+    def _show_status(self, connected: bool, summary: dict[str, Any], startup: str) -> None:
         self.gmail_state.setText("✔ Connected" if connected else "Not connected")
         self.connect_button.setEnabled(not connected)
         self.disconnect_button.setEnabled(connected)
-        summary = controller.index_summary()
         when = local_stamp(summary["last_scan"], empty="never")
         self.index_state.setText(
             f"{summary['items']:,} items indexed ({summary['folders']:,} folders); "
             f"last complete scan: {when}"
         )
+        self.start_note.setText(startup)
+        self.start_note.setVisible(bool(startup))
 
     def _connect(self) -> None:
         if not self.save():

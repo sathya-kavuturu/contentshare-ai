@@ -218,8 +218,12 @@ class MainWindow(QMainWindow):
     def _appearance_changed(self, appearance: str) -> None:
         app = QApplication.instance()
         if isinstance(app, QApplication):
-            apply_theme(app, theme_for(appearance, app))  # does nothing if it is already shown
-            self.help.restyle()
+            QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)  # restyling takes a moment
+            try:
+                apply_theme(app, theme_for(appearance, app))  # nothing happens if already shown
+                self.help.restyle()
+            finally:
+                QApplication.restoreOverrideCursor()
 
     def _settings_saved(self) -> None:
         if self.automation is not None:
@@ -257,7 +261,7 @@ class MainWindow(QMainWindow):
         elif PAGES[row] == "History":
             self.history.refresh()
         elif PAGES[row] == "Settings":
-            self.settings.load()
+            self.settings.show_page()
 
     def _on_event(self, event: Event) -> None:
         self.requests.on_event(event)
@@ -284,7 +288,7 @@ class MainWindow(QMainWindow):
         if self.automation is None:
             return ""
         nxt = self.automation.next_run()
-        return f"Next check {nxt.astimezone():%a %d %b, %H:%M}" if nxt else "Daily check is off"
+        return f"Next check {nxt.astimezone():%a %d %b, %H:%M}" if nxt else "Automatic check is off"
 
     # ------------------------------------------------------------------ closing
     def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt override

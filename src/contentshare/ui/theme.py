@@ -233,9 +233,12 @@ QComboBox::drop-down {{ border: none; width: 26px; subcontrol-origin: padding;
     subcontrol-position: center right; }}
 QComboBox::down-arrow {{ {down} width: 14px; height: 14px; }}
 QComboBox QAbstractItemView {{ background: {t.card}; color: {t.text};
-    border: 1px solid {t.border_strong}; border-radius: 8px; padding: 4px; outline: none;
+    border: 1px solid {t.border_strong}; border-radius: 8px; padding: 6px; outline: none;
     selection-background-color: {t.accent_soft}; selection-color: {t.text}; }}
-QComboBox QAbstractItemView::item {{ min-height: 26px; padding: 0 8px; border-radius: 4px; }}
+QComboBox QAbstractItemView::item {{ min-height: 32px; padding: 0 12px; margin: 1px 0;
+    border-radius: 6px; }}
+QComboBox QAbstractItemView::item:hover {{ background: {t.accent_soft}; }}
+QComboBox QAbstractItemView::item:selected {{ background: {t.accent_soft}; color: {t.text}; }}
 QSpinBox, QTimeEdit {{ padding-right: 24px; }}
 QSpinBox::up-button, QTimeEdit::up-button {{ subcontrol-origin: border;
     subcontrol-position: top right; width: 22px; border: none; background: transparent; }}

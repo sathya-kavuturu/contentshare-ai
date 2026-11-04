@@ -75,10 +75,11 @@ as soon as the copy is verified. Replies go only to the person who asked, in the
 
 Every request, with a step-by-step record of what happened. **Export CSV** saves it for Excel.
 
-## 8. Daily check, tray and pop-ups
+## 8. The automatic check, tray and pop-ups
 
-* The daily check time, **Start ContentShare when I sign in to Windows**, and the tray options
-  are in Settings → General.
+* How often mail is checked by itself (once a day at a set time, or every 15 or 30 minutes, every
+  hour, or every 2, 3, 6 or 12 hours), **Start ContentShare when I sign in to Windows**, and the
+  tray options are in Settings → General. A check only adds request cards.
 * Closing the window leaves ContentShare running next to the clock (tray). **Right-click the
   icon → Quit** to really close it. An amber dot on the icon means requests are waiting.
 * Pop-ups say things like "3 new requests" or "Request #7: copy verified". They never show

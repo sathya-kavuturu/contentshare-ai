@@ -8,12 +8,13 @@ which entry and why, and nothing is saved. Settings cannot be saved while a copy
 
 | Setting | What it does |
 |---|---|
-| **Appearance** | *Same as Windows*, *Light* or *Dark*. The window changes as soon as you choose; **Save settings** keeps the choice for next time (Revert undoes it). |
-| **Check for requests every day** | Lets ContentShare read new mail by itself once a day. It only adds cards; it never copies or sends. |
-| **Daily check at** | The time of that check (24-hour clock). |
-| **Check for requests when the app starts if the daily check was missed** | If the PC was off at check time, check as soon as ContentShare starts. |
+| **Theme** | *Same as Windows*, *Light* or *Dark*. The window changes as soon as you choose, and the choice is remembered at once (you do not need to press Save). |
+| **Check for requests automatically** | Lets ContentShare read new mail by itself. It only adds cards; it never copies or sends. |
+| **How often** | *Once a day, at a set time*, or every 15 or 30 minutes, every hour, or every 2, 3, 6 or 12 hours. A shorter wait means a new request shows up sooner; each check only reads. |
+| **Time of day** | For *Once a day*: the time of the check (24-hour clock). Not used when a check is made every so many minutes or hours. |
+| **Check for requests when the app starts if a check was missed** | If the PC was off when a check was due, check as soon as ContentShare starts. |
 | **Start ContentShare when I sign in to Windows** | Starts it quietly in the tray at sign-in. It adds one entry for your user only; switching it off removes it. |
-| **Keep running in the tray when the window is closed** | ✕ hides the window instead of quitting, so the daily check keeps working. Quit from the tray icon's menu. |
+| **Keep running in the tray when the window is closed** | ✕ hides the window instead of quitting, so the automatic check keeps working. Quit from the tray icon's menu. |
 | **Show pop-up notifications** | Windows pop-ups with counts only, never names, subjects or folders. |
 | **Tick "send the reply automatically" on new requests** | The default for the tick box on each card. The reply is then sent as soon as the copy is verified. Leave it off until you trust the results. |
 | **Dry-run mode** | Approving checks paths, free space and names and reports what would be copied, but **copies nothing and sends nothing**. A bar across the window reminds you while it is on. |

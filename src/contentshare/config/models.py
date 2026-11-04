@@ -154,6 +154,10 @@ class CopySettings(BaseModel):
     free_space_margin_pct: Annotated[int, Field(ge=0, le=50)] = 5
 
 
+# How often mail can be checked by itself: 0 means once a day at a set time.
+CHECK_INTERVALS = (0, 15, 30, 60, 120, 180, 360, 720)
+
+
 class UpdateSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -166,6 +170,8 @@ class ScheduleSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     daily_check_time: str = "09:00"
+    # 0 = once a day at ``daily_check_time``; otherwise a check every this many minutes.
+    check_every_minutes: int = 0
     run_missed_check_on_startup: bool = True
     start_with_windows: bool = False
     daily_check_enabled: bool = True
@@ -177,6 +183,13 @@ class ScheduleSettings(BaseModel):
     def _time(cls, value: str) -> str:
         if not _TIME.match(value):
             raise ValueError("Time must be HH:MM in 24-hour format")
+        return value
+
+    @field_validator("check_every_minutes")
+    @classmethod
+    def _interval(cls, value: int) -> int:
+        if value not in CHECK_INTERVALS:
+            raise ValueError(f"Check interval must be one of {sorted(CHECK_INTERVALS)} minutes")
         return value
 
 

@@ -4,7 +4,15 @@ from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QFontMetrics, QPainter, QPaintEvent, QResizeEvent
-from PySide6.QtWidgets import QLabel, QMessageBox, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QLabel,
+    QListView,
+    QMessageBox,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 
 class Label(QLabel):
@@ -19,6 +27,28 @@ class Label(QLabel):
     def __init__(self, text: str = "", parent: QWidget | None = None) -> None:
         super().__init__(text, parent)
         self.setTextFormat(Qt.TextFormat.PlainText)
+
+
+class Combo(QComboBox):
+    """A drop-down whose list is laid out by the style sheet.
+
+    The default list ignores the item padding and height in the style sheet, so the choices
+    sat tight against each other and the edge. A plain ``QListView`` as the list honours them.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setView(QListView())
+        self.setMaxVisibleItems(12)
+
+    def showPopup(self) -> None:  # noqa: N802 - Qt override
+        # At least as wide as the box, and wide enough for the longest choice plus its padding.
+        longest = max(
+            (self.fontMetrics().horizontalAdvance(self.itemText(i)) for i in range(self.count())),
+            default=0,
+        )
+        self.view().setMinimumWidth(max(self.width(), longest + 48))
+        super().showPopup()
 
 
 def page_header(title: str, subtitle: str = "") -> QVBoxLayout:

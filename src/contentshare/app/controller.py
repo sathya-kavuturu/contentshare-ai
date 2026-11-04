@@ -809,6 +809,13 @@ class Controller:
         return {**stats, "last_scan": max(done) if done else None, "roots": len(scans)}
 
     # ------------------------------------------------------------------ settings
+    def set_appearance(self, appearance: str) -> None:
+        """Remember the theme at once. Nothing else changes (and no copy is disturbed), so it is
+        allowed while copies run, unlike ``apply_config``."""
+        config = AppConfig.model_validate({**self.config.model_dump(), "appearance": appearance})
+        save_config(config, self._config_path)
+        self.config = config
+
     def apply_config(self, config: AppConfig, *, persist: bool = True) -> None:
         """Use new settings. Refused while copies run, so a job never changes folders midway."""
         if self.busy():

@@ -373,7 +373,7 @@ def test_help_describes_every_setting_by_the_name_shown_on_screen(rig: Rig) -> N
         assert name in help_text, f"Help does not mention the setting “{name}”"
     labels = {w.text() for w in settings.findChildren(QLabel)}  # includes the form's row captions
     for phrase in (
-        "Daily check at", "Client file", "Look back", "Emails per check",
+        "How often", "Time of day", "Client file", "Look back", "Emails per check",
         "Mark Ready when at least", "Verification checksum", "Copies at the same time",
         "Attempts per file", "Default reply text", "Storage folders to search",
     ):  # fmt: skip

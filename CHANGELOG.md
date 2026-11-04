@@ -6,6 +6,11 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Check for requests more often than once a day.** Settings → General → *How often*: once a day
+  at a set time, or every 15 minutes, 30 minutes, hour, 2, 3, 6 or 12 hours. A check still only
+  reads mail and adds cards; nothing is copied or sent without a click. Old settings keep working
+  as once a day.
+- The theme choice is remembered as soon as it is chosen (no need to press Save).
 - **Help: "How searching works"** explains in plain words how the mailbox is searched (which mail is
   read, what is checked, how the subject and body are understood) and how folders and files are
   found (the index, the closest-match scoring, exact folder names, choosing it yourself), with a
@@ -56,6 +61,14 @@ uses [semantic versioning](https://semver.org/).
 - Settings and Help are laid out in the background shortly after start, so they open at once.
 
 ### Fixed
+- **Settings flipped back to light mode and was slow to open.** Opening Settings re-applied the saved
+  theme, which undid an unsaved Dark choice and restyled the whole window, and it read the Gmail
+  sign-in, Windows start-up entry and index size before showing anything. The boxes are now filled
+  again only when the settings changed elsewhere (what you typed is kept), those readings are made
+  in the background, and a Settings screen that is slow to open is noted in the log file.
+- **The Theme drop-down (and the other drop-downs) looked cramped**: the choices had no room around
+  them. They now have padding and a rounded highlight, and the list is as wide as its longest
+  choice. The time and number boxes no longer put their text against the border.
 - **The update download looked stuck at 0%.** The checksum file, the connection and the first
   block all came before any progress was shown, which on a slow connection meant a long silent
   wait. The box now says "Connecting to the update server…" with a moving bar, then shows real

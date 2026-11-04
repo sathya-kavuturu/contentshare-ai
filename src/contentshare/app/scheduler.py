@@ -1,4 +1,4 @@
-"""When the daily mail check is due. No Qt, no threads: a clock goes in, a decision comes out.
+"""When the automatic mail check is due (daily, or every so often). No Qt, no threads.
 
 The UI calls :meth:`DailyScheduler.poll` every few seconds. Because the decision is made from
 the wall clock each time (never from a sleeping timer), a laptop that slept through the check
@@ -51,6 +51,7 @@ class DailyScheduler:
     def __init__(self, *, now: Callable[[], datetime] = lambda: datetime.now().astimezone()):
         self._now = now
         self._at = time(9, 0)
+        self._every: timedelta | None = None  # None: once a day at ``_at``
         self._next: datetime | None = None
         self._pending: Due | None = None
         self._attempt = 0
@@ -59,14 +60,31 @@ class DailyScheduler:
 
     # ------------------------------------------------------------------ setup
     def start(
-        self, at: str, *, last_check: datetime | None, run_missed: bool, enabled: bool = True
+        self,
+        at: str,
+        *,
+        last_check: datetime | None,
+        run_missed: bool,
+        enabled: bool = True,
+        every: timedelta | None = None,
     ) -> None:
-        """Begin scheduling. ``last_check`` decides whether today's check was already missed."""
+        """Begin scheduling. ``last_check`` decides whether a check was already missed.
+
+        ``every`` makes it a check every so often instead of once a day at ``at``."""
         self._at = parse_time(at)
+        self._every = every
         self._enabled = enabled
         self._attempt = 0
         self._pending = None
         now = self._now()
+        if every is not None:
+            due = last_check + every if last_check else now
+            if due <= now and run_missed:
+                self._next = now + STARTUP_DELAY  # overdue while the app was closed
+                self._pending = Due("missed")
+            else:
+                self._next = due if due > now else now + every
+            return
         due_before = latest_occurrence(now, self._at)
         if run_missed and (last_check is None or last_check < due_before):
             # The check time passed while the app was closed: run once shortly after start.
@@ -75,15 +93,20 @@ class DailyScheduler:
         else:
             self._next = next_occurrence(now, self._at)
 
-    def reconfigure(self, at: str, *, enabled: bool = True) -> None:
-        """The user changed the time. It never fires a check by itself, only moves the next one."""
+    def reconfigure(self, at: str, *, enabled: bool = True, every: timedelta | None = None) -> None:
+        """The user changed the schedule. It never fires a check by itself, only moves the next."""
         self._at = parse_time(at)
+        self._every = every
         self._enabled = enabled
         if self._running:
             return
         self._pending = None
         self._attempt = 0
-        self._next = next_occurrence(self._now(), self._at)
+        self._next = self._after(self._now())
+
+    def _after(self, now: datetime) -> datetime:
+        """The next regular check after one that ran (or was set up) at ``now``."""
+        return now + self._every if self._every else next_occurrence(now, self._at)
 
     # ------------------------------------------------------------------ state
     @property
@@ -117,7 +140,7 @@ class DailyScheduler:
             if not ok:
                 log.warning("giving up on this check until the next scheduled time")
             self._attempt = 0
-            self._next = next_occurrence(now, self._at)
+            self._next = self._after(now)
         else:
             delay = RETRY_DELAYS[self._attempt]
             self._attempt += 1

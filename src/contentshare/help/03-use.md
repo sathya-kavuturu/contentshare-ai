@@ -47,11 +47,11 @@ dry-run mode nothing is sent.
 
 Every request with a step-by-step record of what happened. **Export CSV** saves it for Excel.
 
-## The daily check, the tray and pop-ups
+## The automatic check, the tray and pop-ups
 
-* At the time set in *Settings → General* ContentShare reads new mail by itself. That only
-  **adds cards**; it never copies or sends. If the PC was off at that time it checks when it is
-  next on.
+* ContentShare reads new mail by itself, once a day at a set time or every 15 minutes to 12 hours
+  (*Settings → General → How often*). That only **adds cards**; it never copies or sends. If the
+  PC was off when a check was due it checks when it is next on.
 * Closing the window with ✕ leaves ContentShare running next to the clock (the **tray**). An
   amber dot on its icon means requests are waiting. **Right-click the icon → Quit** to really
   close it.

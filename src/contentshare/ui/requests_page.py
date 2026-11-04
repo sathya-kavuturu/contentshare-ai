@@ -5,7 +5,6 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
     QHBoxLayout,
     QPushButton,
     QScrollArea,
@@ -18,9 +17,9 @@ from contentshare.copy_engine import format_bytes
 from contentshare.gmail.intake import IntakeReport
 from contentshare.ui.context import UiContext
 from contentshare.ui.request_card import OPEN_STATES, CardState, RequestCard
+from contentshare.ui.widgets import Combo, StackBody, page_header
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
-from contentshare.ui.widgets import StackBody, page_header
 
 FILTERS: list[tuple[str, set[str] | None]] = [
     ("Open requests", OPEN_STATES),
@@ -112,7 +111,7 @@ class RequestsPage(QWidget):
         bar.addWidget(self.bulk_approve)
         bar.addWidget(self.bulk_skip)
         bar.addStretch(1)
-        self.filter = QComboBox()
+        self.filter = Combo()
         self.filter.setAccessibleName("Show")
         for name, _states in FILTERS:
             self.filter.addItem(name)

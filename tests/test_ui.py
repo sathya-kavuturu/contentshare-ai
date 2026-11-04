@@ -628,7 +628,7 @@ def test_settings_index_rescan(rig: Rig, qtbot: Any) -> None:
     page = rig.window.settings
     page.scan_button.click()
     qtbot.waitUntil(page.scan_button.isEnabled, timeout=15000)
-    assert "items indexed" in page.index_state.text()
+    qtbot.waitUntil(lambda: "items indexed" in page.index_state.text())
 
 
 def test_gmail_buttons_follow_connection_state(rig: Rig, qtbot: Any, boxes: Boxes) -> None:
@@ -652,7 +652,8 @@ def test_gmail_buttons_follow_connection_state(rig: Rig, qtbot: Any, boxes: Boxe
     page = rig.window.settings
     page.load()
     page.secret.setText(str(secret))
-    assert page.connect_button.isEnabled() and not page.disconnect_button.isEnabled()
+    qtbot.waitUntil(page.connect_button.isEnabled)  # the state is read in the background
+    assert not page.disconnect_button.isEnabled()
     page.connect_button.click()
     qtbot.waitUntil(lambda: auth.connected and page.disconnect_button.isEnabled(), timeout=10000)
     assert "Connected" in page.gmail_state.text()
