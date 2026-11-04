@@ -21,7 +21,7 @@ from contentshare.jobs.states import (
 )
 from contentshare.storage.db import Database
 
-SNIPPET_MAX = 500
+SNIPPET_MAX = 2000
 # Columns callers may set alongside a transition. Names are interpolated into SQL, so this
 # whitelist is what keeps that safe.
 _UPDATABLE = frozenset(

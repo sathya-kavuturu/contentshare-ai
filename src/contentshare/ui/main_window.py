@@ -58,7 +58,7 @@ def _brand() -> tuple[QWidget, QLabel]:
     """The program's icon and name at the top of the sidebar (and the name, to hide it)."""
     holder = QWidget()
     row = QHBoxLayout(holder)
-    row.setContentsMargins(20, 22, 16, 14)
+    row.setContentsMargins(20, 8, 16, 14)
     row.setSpacing(10)
     mark = QLabel()
     mark.setPixmap(app_icon().pixmap(28, 28))
@@ -130,6 +130,18 @@ class MainWindow(QMainWindow):
         side_layout = QVBoxLayout(self.side)
         side_layout.setContentsMargins(0, 0, 0, 14)
         side_layout.setSpacing(4)
+        # the fold button at the very top (the menu icon): same as the one at the bottom
+        self.top_toggle = QPushButton("☰")
+        self.top_toggle.setFlat(True)
+        self.top_toggle.setFixedSize(36, 32)
+        self.top_toggle.setFocusPolicy(Qt.FocusPolicy.TabFocus)  # no ring after a mouse click
+        self.top_toggle.setStyleSheet("font-size: 18px;")
+        self.top_toggle.clicked.connect(lambda _c=False: self.toggle_sidebar())
+        top_row = QHBoxLayout()
+        top_row.setContentsMargins(16, 10, 12, 0)
+        top_row.addWidget(self.top_toggle)
+        top_row.addStretch(1)
+        side_layout.addLayout(top_row)
         brand, self._brand_name = _brand()
         side_layout.addWidget(brand)
         self._brand_row = brand.layout()
@@ -167,9 +179,7 @@ class MainWindow(QMainWindow):
         self.side.setFixedWidth(SIDEBAR_NARROW if collapsed else SIDEBAR_WIDE)
         self._brand_name.setVisible(not collapsed)
         if self._brand_row is not None:
-            self._brand_row.setContentsMargins(
-                *((20, 22, 20, 14) if collapsed else (20, 22, 16, 14))
-            )
+            self._brand_row.setContentsMargins(*((20, 8, 20, 14) if collapsed else (20, 8, 16, 14)))
         self.nav.set_collapsed(collapsed)
         self._update_holder.setVisible(not collapsed)
         self.side_toggle.setText("»" if collapsed else "«   Fold menu")
@@ -177,6 +187,8 @@ class MainWindow(QMainWindow):
             "Show the menu names" if collapsed else "Fold the menu to icons"
         )
         self.side_toggle.setAccessibleName("Show the menu" if collapsed else "Fold the menu")
+        self.top_toggle.setToolTip(self.side_toggle.toolTip())
+        self.top_toggle.setAccessibleName(self.side_toggle.accessibleName())
         if remember:
             with contextlib.suppress(OSError, ValueError):  # only "remember it" can fail
                 self.controller.set_ui_option("sidebar_collapsed", collapsed)

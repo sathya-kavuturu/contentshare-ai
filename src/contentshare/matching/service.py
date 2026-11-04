@@ -18,7 +18,7 @@ from contentshare.config.models import AppConfig, Department
 from contentshare.config.templates import SUBFOLDER_PLACEHOLDERS, render_template
 from contentshare.index.store import ContentIndex, IndexedItem
 from contentshare.jobs.states import RequestState
-from contentshare.matching.exact import drop_enclosing, wanted_names
+from contentshare.matching.exact import drop_enclosing, unread_lines, wanted_names
 from contentshare.matching.scorer import Candidate, rank_candidates
 from contentshare.parsing.dates import date_phrases
 from contentshare.parsing.request import MAX_ITEMS, RequestItem, parse_request
@@ -183,12 +183,14 @@ def exact_items(
             )
             candidates = [_exact_candidate(i) for i in items]
             pairs.append((request, Triage(RequestState.NEEDS_REVIEW, reason, candidates)))
-        elif w.explicit and not found_only:
+        elif w.explicit:
             reason = f"No folder named “{w.name}” was found in the storage folders"
             pairs.append((request, Triage(RequestState.NEEDS_REVIEW, reason)))
         if len(pairs) >= MAX_ITEMS:
             return pairs, (f"Only the first {MAX_ITEMS} folder names were read",)
-    if not pairs and not found_only:
+    if found_only and not any(t.state == RequestState.READY or t.candidates for _, t in pairs):
+        return [], ()  # nothing on the server has any of the names: not a list of folder names
+    if not pairs:
         text = (subject.strip() or "(no subject)")[:120]
         reason = (
             "No folder name in this email exactly matches a folder in the storage folders. "
@@ -197,6 +199,11 @@ def exact_items(
         pairs.append(
             (RequestItem(program=text, raw=text), Triage(RequestState.NEEDS_REVIEW, reason))
         )
+    left = unread_lines(body, [r.program for r, _ in pairs])
+    if left:
+        shown = "; ".join(f"“{line[:80]}”" for line in left[:6])
+        more = f" (and {len(left) - 6} more)" if len(left) > 6 else ""
+        return pairs, (f"These lines of the email were not searched: {shown}{more}",)
     return pairs, ()
 
 

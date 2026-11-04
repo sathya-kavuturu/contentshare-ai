@@ -198,3 +198,14 @@ def test_folded_cards_still_support_selecting_and_bulk_actions(rig: Rig) -> None
     page.select_all.setChecked(True)
     assert all(c.select.isChecked() for c in rig.cards())
     assert page.bulk_skip.isEnabled()
+
+
+def test_the_menu_icon_at_the_top_folds_and_opens_the_menu(rig: Rig) -> None:  # noqa: F811
+    window = rig.window
+    assert window.top_toggle.text() == "☰"
+    window.top_toggle.click()
+    assert window.sidebar_collapsed and window.side.width() == SIDEBAR_NARROW
+    assert window.top_toggle.accessibleName() == "Show the menu"
+    assert not window.top_toggle.isHidden()  # still there to open it again
+    window.top_toggle.click()
+    assert not window.sidebar_collapsed and window.top_toggle.accessibleName() == "Fold the menu"

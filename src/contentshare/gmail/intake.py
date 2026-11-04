@@ -174,7 +174,7 @@ class IntakeService:
             sender_name=msg.sender_name,
             department=dept.name,
             subject=msg.subject,
-            snippet=clean_body(msg.body)[:500],
+            snippet=clean_body(msg.body)[:2000],
             received_at=msg.received_at,
             auth_status=auth.verdict.value,
             rfc_message_id=msg.rfc_message_id,

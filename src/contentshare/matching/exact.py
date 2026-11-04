@@ -82,7 +82,9 @@ def wanted_names(subject: str, body: str) -> list[WantedName]:
         previous = found.get(key)
         if previous is None or (explicit and not previous.explicit):
             shorter = without_leading_date(name)
-            found[key] = WantedName(name, explicit, (shorter,) if shorter else ())
+            # a line that starts with a date is a listed name ("Nov 22-28 Amber Step 4 ..."): if
+            # there is no such folder it is reported, never dropped
+            found[key] = WantedName(name, explicit or bool(shorter), (shorter,) if shorter else ())
 
     lines = [clean_subject(strip_links(subject))] if subject.strip() else []
     lines += clean_body(body).split("\n") if body.strip() else []
@@ -100,6 +102,31 @@ def wanted_names(subject: str, body: str) -> list[WantedName]:
             if _looks_like_a_folder_name(cleaned):  # a plain word such as "2026" or "video" is not
                 add(cleaned, True)
     return sorted(found.values(), key=lambda w: not w.explicit)
+
+
+_CHATTER = re.compile(
+    r"^(?:hi|hello|hey|dear|namaste|namaskaram|pranam|thanks?|thank you|regards|warm regards|"
+    r"best|sincerely|with love|pranams|good (?:morning|afternoon|evening))\b",
+    re.IGNORECASE,
+)
+
+
+def unread_lines(body: str, covered: list[str]) -> list[str]:
+    """Lines of the email body that no request was made from, apart from greetings, thanks and
+    lines ending in a colon. They are shown to the person so that a name that was skipped is
+    never invisible. (The subject is on the card already.)"""
+    done = [c.casefold() for c in covered if c]
+    out: list[str] = []
+    for line in clean_body(body).split("\n") if body.strip() else []:
+        bullet = _BULLET.match(line)
+        raw = bullet[1] if bullet else line
+        text = _tidy(raw)
+        if len(text) < 8 or raw.rstrip().endswith(":") or _CHATTER.match(text):
+            continue
+        if any(d in text.casefold() for d in done) or text in out:
+            continue
+        out.append(text[:MAX_NAME_CHARS])
+    return out
 
 
 def drop_enclosing(matches: dict[str, list[IndexedItem]]) -> dict[str, list[IndexedItem]]:

@@ -439,3 +439,44 @@ def test_the_storage_is_not_read_again_for_every_missing_name(h: Harness) -> Non
     h.mail(message_id="x32", subject="Content request", body=_DATED)
     (view,) = h.ctl.views()
     assert view.state == "NEEDS_REVIEW"  # too soon to read it all again
+
+
+def _make_two_of_three(h: Harness) -> None:  # noqa: F811
+    for name in _THREE[:2]:
+        (h.world.storage / "Weekly" / name).mkdir(parents=True)
+        (h.world.storage / "Weekly" / name / "a.mp4").write_bytes(b"x")
+    h.world.index.scan_all([str(h.world.storage)])
+
+
+@pytest.mark.parametrize("on", [True, False])
+def test_a_listed_name_that_is_not_on_the_server_is_shown_not_dropped(
+    h: Harness,  # noqa: F811
+    on: bool,
+) -> None:
+    _make_two_of_three(h)
+    _exact(h, on=on)
+    body = "\n".join(f"Nov 22-28  {n}" for n in _THREE)
+    h.mail(message_id="x40", subject="Content request", body=body)
+    views = h.ctl.views()
+    assert len(views) == 3, [(v.requested, v.state) for v in views]
+    missing = [v for v in views if v.state == "NEEDS_REVIEW"]
+    assert len(missing) == 1 and _THREE[2] in missing[0].reason
+
+
+def test_lines_that_made_no_request_are_listed_on_the_card(h: Harness) -> None:  # noqa: F811
+    _make_two_of_three(h)
+    _exact(h)
+    extra = "Also need the Silver Bay recording from Sunday"
+    body = f"Hello,\nPlease share:\n{_THREE[0]}\n{extra}\nThanks"
+    h.mail(message_id="x41", subject="Content request", body=body)
+    warnings = {w for v in h.ctl.views() for w in v.warnings}
+    text = " ".join(warnings)
+    assert "not searched" in text and "Silver Bay recording" in text
+    assert "Hello" not in text and "Thanks" not in text and "Please share" not in text
+
+
+def test_a_clean_list_has_no_unsearched_warning(h: Harness) -> None:  # noqa: F811
+    _make_two_of_three(h)
+    _exact(h)
+    h.mail(message_id="x42", subject="Content request", body="\n".join(_THREE[:2]))
+    assert not any("not searched" in w for v in h.ctl.views() for w in v.warnings)

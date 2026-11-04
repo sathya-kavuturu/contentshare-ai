@@ -31,7 +31,7 @@ to open it. **Collapse all** at the top of the list folds every request, and the
 reads **Expand all**. Folding only changes what you see: ticks you made stay, and new requests
 that arrive later follow the last choice. The choice is remembered for next time.
 
-The menu on the left can be folded too: **« Fold menu** at its bottom leaves just the icons (hover
+The menu on the left can be folded too: the **☰** icon at its top (or **« Fold menu** at its bottom) leaves just the icons (hover
 one for its name; the number on the Requests icon is how many are waiting), and **»** brings the
 names back. If an update is found while it is folded, it opens so you can see the update box.
 
@@ -39,6 +39,8 @@ names back. If an update is found while it is folded, it opens so you can see th
 "cannot share" reply, which you can edit first.
 
 A department set to **exact folder names** (Settings → Departments) shows each folder name from the email that was found on the storage server as **Ready**. A name with several folders of that name, or no folder at all, is **Needs review**, and you can browse for the folder yourself.
+
+Lines of the email that no request was made from are listed on the card under **These lines of the email were not searched**, so compare it with the email if something seems missing. **Show text** on the card shows the start of the email.
 
 If a program is not found, press **Search manually…** and type part of its name, or press **Browse for a folder…** / **Browse for a file…** and pick it yourself on the storage server. What you pick must be inside one of the storage folders in *Settings* (it does not have to be in the index), unless the department has **Allow choosing from anywhere** switched on, in which case it can be anywhere. If a whole program is missing from every search result, refresh the index in *Settings → Index*.
 
