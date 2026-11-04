@@ -6,6 +6,12 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Exact folder names, per department.** In Settings → Departments (and in the first-run setup)
+  tick *The emails give exact folder names* for a department whose requests name the folder as it
+  is on the storage server. Each name in the email (one per line, in a list, or in quotes) is looked
+  up as a folder with exactly that name; one folder is *Ready*, several are *Needs review*, and a
+  name that is not found is reported. Nothing is guessed. Leave it off for departments whose emails
+  are free-form: you get the closest matches and can browse for the folder yourself.
 - **Update check:** when the program starts (switchable in Settings → General, or on demand with
   *Check for updates now*) it looks for a newer release on GitHub. A box at the bottom left of the
   window offers **Download**; when the installer has been downloaded and checked against its

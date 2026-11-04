@@ -56,6 +56,7 @@ senders are ever read. Use **Add…**, **Edit…** (or double-click) and **Remov
 | **Sender emails** | One address per line. Requests from these addresses are read. |
 | **Sender domains** | Optional: anyone at this company domain, for example `example.org`. Public mail services such as `gmail.com` or `outlook.com` are refused, because anyone can have an address there; list those people's addresses instead. |
 | **Copy into** | The department's folder, for example `\\nas02\media\Incoming`. It must not be inside the storage folders, inside Windows or Program Files, or overlap another department's folder. |
+| **Folder names** | Tick **The emails give exact folder names** for a department whose requests name the folder exactly as it is on the storage server (one name per line, in a list, or in quotes). ContentShare then looks for folders with exactly those names (capital letters do not matter) and nothing is guessed: one folder of that name is **Ready**, several are **Needs review** so you pick one, and a name that is not found says so. Leave it off for a department whose emails are free-form: you get the closest matches, and you can **Browse for a folder…** yourself. |
 | **Subfolder** | How each program's folder is named inside it. Default `{program}`. You can also use `{date}` and `{department}`. |
 | **Reply text** | This department's own reply. Leave empty to use the default. |
 

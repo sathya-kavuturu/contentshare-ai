@@ -73,6 +73,10 @@ class Department(BaseModel):
     destination_root: str
     subfolder_pattern: str = "{program}"
     reply_template: str | None = None
+    # True: the emails give folder names exactly as they are on the server, so only folders with
+    # exactly those names are used and nothing is guessed. False: the closest matches are
+    # suggested and the folder can also be browsed for.
+    exact_folder_names: bool = False
 
     @field_validator("sender_emails")
     @classmethod

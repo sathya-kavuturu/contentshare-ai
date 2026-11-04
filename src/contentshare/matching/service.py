@@ -16,11 +16,12 @@ from typing import Any
 
 from contentshare.config.models import AppConfig, Department
 from contentshare.config.templates import SUBFOLDER_PLACEHOLDERS, render_template
-from contentshare.index.store import ContentIndex
+from contentshare.index.store import ContentIndex, IndexedItem
 from contentshare.jobs.states import RequestState
+from contentshare.matching.exact import drop_enclosing, wanted_names
 from contentshare.matching.scorer import Candidate, rank_candidates
 from contentshare.parsing.dates import date_phrases
-from contentshare.parsing.request import RequestItem, parse_request
+from contentshare.parsing.request import MAX_ITEMS, RequestItem, parse_request
 from contentshare.security.paths import PathSafetyError, join_within
 from contentshare.storage.repository import Repository
 
@@ -130,6 +131,47 @@ def _apply_safety_rules(
     }
 
 
+def _exact_candidate(item: IndexedItem) -> Candidate:
+    return Candidate(item, 100.0, 100.0, 100.0, ("exact folder name",), frozenset())
+
+
+def exact_items(
+    subject: str, body: str, index: ContentIndex
+) -> tuple[list[tuple[RequestItem, Triage]], tuple[str, ...]]:
+    """Request lines for a department that gives exact folder names. A name with one folder of
+    that name is READY; a name with several folders is NEEDS_REVIEW (pick one); a name that
+    clearly was meant as a folder but has none is NEEDS_REVIEW (browse for it)."""
+    wanted = wanted_names(subject, body)
+    matches = drop_enclosing(index.find_dirs_named([w.name for w in wanted]))
+    pairs: list[tuple[RequestItem, Triage]] = []
+    for w in wanted:
+        items = matches.get(w.name)
+        request = RequestItem(program=w.name, raw=w.name)
+        if items and len(items) == 1:
+            candidate = _exact_candidate(items[0])
+            reason = f"Folder “{items[0].name}” found with exactly that name"
+            pairs.append((request, Triage(RequestState.READY, reason, [candidate], candidate)))
+        elif items:
+            reason = f"{len(items)} folders are named “{w.name}”; please pick the right one"
+            candidates = [_exact_candidate(i) for i in items]
+            pairs.append((request, Triage(RequestState.NEEDS_REVIEW, reason, candidates)))
+        elif w.explicit:
+            reason = f"No folder named “{w.name}” was found in the storage folders"
+            pairs.append((request, Triage(RequestState.NEEDS_REVIEW, reason)))
+        if len(pairs) >= MAX_ITEMS:
+            return pairs, (f"Only the first {MAX_ITEMS} folder names were read",)
+    if not pairs:
+        text = (subject.strip() or "(no subject)")[:120]
+        reason = (
+            "No folder name in this email exactly matches a folder in the storage folders. "
+            "Browse for the folder yourself."
+        )
+        pairs.append(
+            (RequestItem(program=text, raw=text), Triage(RequestState.NEEDS_REVIEW, reason))
+        )
+    return pairs, ()
+
+
 def process_email_requests(
     repo: Repository,
     index: ContentIndex,
@@ -146,18 +188,21 @@ def process_email_requests(
     if email is None:
         raise KeyError(f"No email {email_id}")
     dept = config.department_for_sender(email["sender_email"])
-    parsed = parse_request(subject, body, config.parsing, today=today)
-    items = list(parsed.items) or [RequestItem(program="")]
+    if dept is not None and dept.exact_folder_names:
+        pairs, notes = exact_items(subject, body, index)
+    else:
+        parsed = parse_request(subject, body, config.parsing, today=today)
+        items = list(parsed.items) or [RequestItem(program="")]
+        pairs = [(item, triage_item(item, index, config, today=today)) for item in items]
+        notes = parsed.notes
 
     ids: list[int] = []
-    for number, item in enumerate(items, start=1):
+    for number, (item, first_triage) in enumerate(pairs, start=1):
         request_id = repo.add_request(
             email_id, number, {"item": item.to_dict()}, auto_reply=config.auto_reply_default
         )
-        triage, fields = _apply_safety_rules(
-            triage_item(item, index, config, today=today), item, dept, email
-        )
-        warnings = list(parsed.notes)
+        triage, fields = _apply_safety_rules(first_triage, item, dept, email)
+        warnings = list(notes)
         if email["auth_status"] != "verified":
             warnings.append("Sender could not be verified")
         fields["query_json"] = _query_json(item, triage, warnings)

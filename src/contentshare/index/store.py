@@ -226,6 +226,21 @@ class ContentIndex:
         ).fetchall()
         return [_row_to_item(r) for r in rows]
 
+    def find_dirs_named(self, names: Sequence[str]) -> dict[str, list[IndexedItem]]:
+        """Folders whose name is exactly one of ``names`` (capitals do not matter), by the name
+        asked for. Names with no folder are left out. Every value is a bound parameter."""
+        found: dict[str, list[IndexedItem]] = {}
+        with self.db.read() as conn:
+            for name in names:
+                rows = conn.execute(
+                    "SELECT * FROM content_items WHERE name = ? COLLATE NOCASE AND kind = 'dir' "
+                    "ORDER BY depth, root, rel_path LIMIT 50",
+                    (name,),
+                ).fetchall()
+                if rows:
+                    found[name] = [_row_to_item(r) for r in rows]
+        return found
+
     def get(self, item_id: int) -> IndexedItem | None:
         with self.db.read() as conn:
             row = conn.execute("SELECT * FROM content_items WHERE id = ?", (item_id,)).fetchone()

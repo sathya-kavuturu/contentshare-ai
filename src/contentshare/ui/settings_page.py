@@ -45,6 +45,11 @@ log = logging.getLogger(__name__)
 
 HASHES = ["xxh3_128", "blake3", "sha256"]
 APPEARANCES = [("system", "Same as Windows"), ("light", "Light"), ("dark", "Dark")]
+EXACT_HINT = (
+    "On: the email names the folders exactly as they are on the storage server (one per line, in "
+    "a list, or in quotes). Only folders with exactly those names are used and nothing is guessed. "
+    "Off: the closest matches are suggested, and you can also browse for the folder yourself."
+)
 
 
 def lines(text: str) -> list[str]:
@@ -58,6 +63,23 @@ def explain_validation(exc: ValidationError) -> str:
         where = " → ".join(str(p) for p in err["loc"])
         out.append(f"• {where}: {err['msg'].removeprefix('Value error, ')}")
     return "\n".join(out)
+
+
+def exact_folder_option(checked: bool = False) -> tuple[QCheckBox, QWidget]:
+    """The "exact folder names" tick with its explanation, for the department forms."""
+    box = QCheckBox("The emails give exact folder names")
+    box.setChecked(checked)
+    box.setAccessibleName("Exact folder names")
+    hint = QLabel(EXACT_HINT)
+    hint.setWordWrap(True)
+    hint.setProperty("role", "small")
+    holder = QWidget()
+    layout = QVBoxLayout(holder)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(4)
+    layout.addWidget(box)
+    layout.addWidget(hint)
+    return box, holder
 
 
 class DepartmentDialog(QDialog):
@@ -83,12 +105,14 @@ class DepartmentDialog(QDialog):
         root_row.addWidget(self.root, 1)
         root_row.addWidget(browse)
         self.pattern = QLineEdit(d.subfolder_pattern if d else "{program}")
+        self.exact, exact_box = exact_folder_option(bool(d and d.exact_folder_names))
         self.reply = QPlainTextEdit(d.reply_template or "" if d else "")
         self.reply.setPlaceholderText("Leave empty to use the default reply text")
         form.addRow("Name", self.name)
         form.addRow("Sender emails", self.emails)
         form.addRow("Sender domains", self.domains)
         form.addRow("Copy into", root_row)
+        form.addRow("Folder names", exact_box)
         form.addRow("Subfolder", self.pattern)
         form.addRow("Reply text", self.reply)
         layout.addLayout(form)
@@ -122,6 +146,7 @@ class DepartmentDialog(QDialog):
                 destination_root=self.root.text().strip(),
                 subfolder_pattern=self.pattern.text().strip() or "{program}",
                 reply_template=self.reply.toPlainText().strip() or None,
+                exact_folder_names=self.exact.isChecked(),
             )
         except ValidationError as exc:
             QMessageBox.warning(self, "Check the department", explain_validation(exc))
@@ -276,8 +301,10 @@ class SettingsPage(QWidget):
         layout.addWidget(
             QLabel("Only emails from these senders are read. Each department has one folder.")
         )
-        self.dept_table = QTableWidget(0, 3)
-        self.dept_table.setHorizontalHeaderLabels(["Department", "Senders", "Copies go to"])
+        self.dept_table = QTableWidget(0, 4)
+        self.dept_table.setHorizontalHeaderLabels(
+            ["Department", "Senders", "Copies go to", "Folder names"]
+        )
         self.dept_table.setAccessibleName("Departments")
         self.dept_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.dept_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
@@ -290,6 +317,7 @@ class SettingsPage(QWidget):
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.dept_table.doubleClicked.connect(lambda _i: self._edit_department())
         layout.addWidget(self.dept_table, 1)
         row = QHBoxLayout()
@@ -537,7 +565,8 @@ class SettingsPage(QWidget):
         self.dept_table.setRowCount(len(self.departments))
         for row, d in enumerate(self.departments):
             senders = ", ".join([*d.sender_emails, *(f"@{x}" for x in d.sender_domains)])
-            for col, text in enumerate([d.name, senders, d.destination_root]):
+            names = "Exact" if d.exact_folder_names else "Suggested"
+            for col, text in enumerate([d.name, senders, d.destination_root, names]):
                 self.dept_table.setItem(row, col, QTableWidgetItem(text))
 
     def _add_department(self) -> None:

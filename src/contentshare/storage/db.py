@@ -156,6 +156,10 @@ MIGRATIONS: list[str] = [
     CREATE UNIQUE INDEX idx_replies_one_active ON replies(request_id, purpose)
         WHERE status IN ('SENDING', 'SENT');
     """,
+    # --- v5: look up a folder by its exact name (capitals do not matter, as in Windows) ---
+    """
+    CREATE INDEX idx_content_name ON content_items(name COLLATE NOCASE, kind);
+    """,
 ]
 
 
