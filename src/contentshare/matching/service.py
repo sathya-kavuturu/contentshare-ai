@@ -22,7 +22,7 @@ from contentshare.matching.exact import drop_enclosing, wanted_names
 from contentshare.matching.scorer import Candidate, rank_candidates
 from contentshare.parsing.dates import date_phrases
 from contentshare.parsing.request import MAX_ITEMS, RequestItem, parse_request
-from contentshare.security.paths import PathSafetyError, join_within
+from contentshare.security.paths import PathSafetyError, join_within, resolve_within
 from contentshare.storage.repository import Repository
 
 log = logging.getLogger(__name__)
@@ -87,7 +87,10 @@ def program_label(candidate: Candidate) -> str:
 
 def destination_for(dept: Department, candidate: Candidate, item: RequestItem) -> Path:
     """Where this content goes: the department folder plus its subfolder pattern. The result is
-    checked to stay inside the department folder (``PathSafetyError`` otherwise)."""
+    checked to stay inside the department folder (``PathSafetyError`` otherwise). A single file
+    goes straight into the department folder, not into a folder named after the one it came from."""
+    if not candidate.item.is_dir:
+        return resolve_within(dept.destination_root, dept.destination_root)
     values = {
         "program": program_label(candidate),
         "date": item.dates[0].start.isoformat() if item.dates else "",
@@ -144,11 +147,18 @@ def _exact_candidate(item: IndexedItem) -> Candidate:
 
 
 def exact_items(
-    subject: str, body: str, index: ContentIndex, roots: list[str] | None = None
+    subject: str,
+    body: str,
+    index: ContentIndex,
+    roots: list[str] | None = None,
+    *,
+    found_only: bool = False,
 ) -> tuple[list[tuple[RequestItem, Triage]], tuple[str, ...]]:
     """Request lines for a department that gives exact folder names. A name with one folder of
     that name is READY; a name with several folders is NEEDS_REVIEW (pick one); a name that
-    clearly was meant as a folder but has none is NEEDS_REVIEW (browse for it)."""
+    clearly was meant as a folder but has none is NEEDS_REVIEW (browse for it). With
+    ``found_only`` only names that exist on the server are returned (nothing is reported for the
+    rest), for emails that are not expected to give exact names."""
     wanted = wanted_names(subject, body)
     tries = list(dict.fromkeys(n for w in wanted for n in (w.name, *w.alternates)))
     folders = drop_enclosing(index.find_dirs_named(tries, roots))
@@ -173,12 +183,12 @@ def exact_items(
             )
             candidates = [_exact_candidate(i) for i in items]
             pairs.append((request, Triage(RequestState.NEEDS_REVIEW, reason, candidates)))
-        elif w.explicit:
+        elif w.explicit and not found_only:
             reason = f"No folder named “{w.name}” was found in the storage folders"
             pairs.append((request, Triage(RequestState.NEEDS_REVIEW, reason)))
         if len(pairs) >= MAX_ITEMS:
             return pairs, (f"Only the first {MAX_ITEMS} folder names were read",)
-    if not pairs:
+    if not pairs and not found_only:
         text = (subject.strip() or "(no subject)")[:120]
         reason = (
             "No folder name in this email exactly matches a folder in the storage folders. "
@@ -210,12 +220,17 @@ def process_email_requests(
     if dept is not None and dept.exact_folder_names:
         pairs, notes = exact_items(subject, body, index, roots)
     else:
-        parsed = parse_request(subject, body, config.parsing, today=today)
-        items = list(parsed.items) or [RequestItem(program="")]
-        pairs = [
-            (item, triage_item(item, index, config, today=today, roots=roots)) for item in items
-        ]
-        notes = parsed.notes
+        # A line that is exactly the name of a folder on the server (even one with a date in its
+        # name, "Amber Step 4 English 31-oct-2026", or a date range before it) is that folder; the
+        # free-text reading below would take the dates out of it and look for something else.
+        pairs, notes = exact_items(subject, body, index, roots, found_only=True)
+        if not pairs:
+            parsed = parse_request(subject, body, config.parsing, today=today)
+            items = list(parsed.items) or [RequestItem(program="")]
+            pairs = [
+                (item, triage_item(item, index, config, today=today, roots=roots)) for item in items
+            ]
+            notes = parsed.notes
 
     ids: list[int] = []
     for number, (item, first_triage) in enumerate(pairs, start=1):

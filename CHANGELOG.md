@@ -26,6 +26,14 @@ uses [semantic versioning](https://semver.org/).
   list used to stop at five.
 
 ### Fixed
+- **A folder name that ends in a date was not found** (for example the line `Nov 22-28  Amber Step 4
+  English 31-oct-2026`). The free-text reading took the dates and the language out and looked for
+  something else. Now every line of the email is first looked up as the exact name of a folder (or
+  file) on the storage server, with or without a date range written before it, for every
+  department, whether or not *The emails give exact folder names* is ticked. Only when no line is
+  a folder name does the closest-match search run, as before.
+- **A single file was copied into a folder named after the folder it was kept in.** A file is now
+  copied straight into the department's folder, without that extra folder.
 - **A window no longer flashes when Settings is opened.** Looking up the Windows start-up task
   started a console program that opened and closed a window; it now runs hidden.
 - **Help no longer shows a topic twice** after an update. Old help pages left behind by an earlier

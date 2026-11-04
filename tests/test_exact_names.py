@@ -338,3 +338,47 @@ def test_a_whole_line_that_is_a_folder_name_is_still_tried_first(h: Harness) -> 
     h.mail(message_id="x13", subject="Request", body="Nov 22-28 Special")
     (view,) = h.ctl.views()
     assert view.state == "READY" and (view.source_path or "").endswith("Nov 22-28 Special")
+
+
+_DATED = "Amber Step 4 English 31-oct-2026"
+
+
+def _make_dated(h: Harness) -> None:  # noqa: F811
+    (h.world.storage / "Amber" / _DATED).mkdir(parents=True)
+    (h.world.storage / "Amber" / _DATED / "a.mp4").write_bytes(b"x" * 10)
+    h.world.index.scan_all([str(h.world.storage)])
+
+
+@pytest.mark.parametrize("on", [True, False])
+def test_a_folder_name_that_ends_in_a_date_is_found_after_a_date_range(
+    h: Harness,  # noqa: F811
+    on: bool,
+) -> None:
+    _make_dated(h)
+    _exact(h, on=on)  # with the option off the line is still looked up as a folder name first
+    h.mail(message_id="x20", subject="Content request", body=f"Nov 22-28  {_DATED}")
+    (view,) = h.ctl.views()
+    assert view.state == "READY", (view.state, view.reason)
+    assert (view.source_path or "").endswith(_DATED)
+    assert (view.destination_path or "").endswith(_DATED)
+
+
+def test_loose_matching_still_applies_when_no_line_is_a_folder_name(h: Harness) -> None:  # noqa: F811
+    _exact(h, on=False)
+    h.mail(message_id="x21", subject="Sunrise Talk 12 Oct 2026", body="english recording please")
+    (view,) = h.ctl.views()
+    assert view.state == "READY" and "exactly that name" not in view.reason
+
+
+def test_a_file_is_copied_without_its_parent_folder(h: Harness) -> None:  # noqa: F811
+    _make_week(h)
+    _exact(h)
+    h.mail(message_id="x22", subject="Request", body="Marathi Orchid 6th of November")
+    (view,) = h.ctl.views()
+    root = Path(h.ctl.config.departments[0].destination_root).resolve()
+    assert Path(view.destination_path or "") == root
+    h.ctl.approve(view.id, confirmed=True)
+    h.wait_copy(view.id)
+    assert h.ctl.view(view.id).state == "VERIFIED"
+    assert (root / "Marathi Orchid 6th of November.mp4").is_file()
+    assert not (root / "Marathi").exists()  # no folder named after where the file was kept

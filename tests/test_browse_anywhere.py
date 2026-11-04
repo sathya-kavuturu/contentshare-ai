@@ -67,7 +67,7 @@ def test_a_folder_from_anywhere_becomes_ready_and_goes_to_the_department_folder(
     assert Path(after.destination_path or "").name == "Some Program 2024"
 
 
-def test_a_single_file_from_anywhere_goes_into_a_folder_named_after_it(
+def test_a_single_file_from_anywhere_goes_straight_into_the_department_folder(
     h: Harness,  # noqa: F811
     tmp_path: Path,
 ) -> None:
@@ -77,7 +77,10 @@ def test_a_single_file_from_anywhere_goes_into_a_folder_named_after_it(
     h.ctl.choose_path(view.id, str(file))
     after = h.ctl.view(view.id)
     assert after.state == "READY" and after.file_count == 1
-    assert Path(after.destination_path or "").name == "a"
+    assert (
+        Path(after.destination_path or "")
+        == Path(h.ctl.config.departments[0].destination_root).resolve()
+    )
 
 
 def test_something_inside_the_storage_still_works_as_before(h: Harness) -> None:  # noqa: F811
