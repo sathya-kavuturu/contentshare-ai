@@ -41,6 +41,12 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; Flags: unchecked
 
+[InstallDelete]
+; An upgrade installs over the old version, which would leave files the new one no longer has
+; (for example help pages that were renamed, shown as a second copy of the topic). Only program
+; files are listed here; user data is in %APPDATA%\ContentShare.
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 Source: "..\dist\ContentShare\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
 

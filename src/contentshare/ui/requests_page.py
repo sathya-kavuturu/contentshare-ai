@@ -145,18 +145,23 @@ class RequestsPage(QWidget):
         self._refresh_pending = False
         controller = self.ctx.controller
         wanted = self.selected_states()
-        views = [v for v in controller.views() if wanted is None or v.state in wanted]
-        views.sort(key=lambda v: (v.state != "NEEDS_REVIEW", v.state != "FAILED", -v.id))
+        everything = controller.groups()  # one entry for each email, with all its folders
+        groups = [
+            g for g in everything if wanted is None or any(v.state in wanted for v in g.items)
+        ]
+        groups.sort(
+            key=lambda g: (not g.in_states({"NEEDS_REVIEW"}), not g.in_states({"FAILED"}), -g.id)
+        )
 
         for card in self._cards:
             self.body.remove(card)
         self._cards = []
-        live = {v.id for v in controller.views()}
+        live = {g.id for g in everything}
         self._states = {k: s for k, s in self._states.items() if k in live}
-        for view in views:
-            state = self._states.setdefault(view.id, CardState(collapsed=self._compact))
+        for group in groups:
+            state = self._states.setdefault(group.id, CardState(collapsed=self._compact))
             card = RequestCard(
-                view,
+                group,
                 self.ctx,
                 state,
                 on_selection_changed=self._update_bulk,
@@ -170,10 +175,10 @@ class RequestsPage(QWidget):
             f"Last check {stamp.astimezone():%d %b %H:%M}" if stamp else "Never checked"
         )
         self.empty.setText(
-            "" if views else "Nothing to show here. Click “Check now” to look for new requests."
+            "" if groups else "Nothing to show here. Click “Check now” to look for new requests."
         )
-        self.empty.setVisible(not views)
-        self.scroller.setVisible(bool(views))
+        self.empty.setVisible(not groups)
+        self.scroller.setVisible(bool(groups))
         summary = controller.index_summary()
         self.index_note.setVisible(summary["items"] == 0)
         self.index_note.setText(
@@ -207,7 +212,7 @@ class RequestsPage(QWidget):
 
     def _update_bulk(self) -> None:
         chosen = [c for c in self._cards if c.state.selected]
-        approvable = [c for c in chosen if c.view.state == "READY"]
+        approvable = [c for c in chosen if c.group.in_states({"READY"})]
         self.bulk_approve.setEnabled(bool(approvable))
         self.bulk_skip.setEnabled(bool(chosen))
         self.bulk_approve.setText(
@@ -239,7 +244,7 @@ class RequestsPage(QWidget):
         self.ctx.bridge.work(self.ctx.controller.check_now, done, failed)
 
     def _approve_selected(self) -> None:
-        cards = [c for c in self._cards if c.state.selected and c.view.state == "READY"]
+        cards = [c for c in self._cards if c.state.selected and c.group.in_states({"READY"})]
         genuine = [c for c in cards if c.view.verified_sender]
         skipped_unverified = len(cards) - len(genuine)
         if not genuine:
@@ -249,7 +254,9 @@ class RequestsPage(QWidget):
                 "unverified sender must be approved one at a time.",
             )  # fmt: skip
             return
-        total = sum(c.view.total_bytes or 0 for c in genuine)
+        lines = [v for c in genuine for v in c.group.in_states({"READY"})]
+        total = sum(v.total_bytes or 0 for v in lines)
+        folders = f" ({len(lines)} folders)" if len(lines) != len(genuine) else ""
         extra = (
             f"\n\n{skipped_unverified} request(s) from unverified senders are left out."
             if skipped_unverified
@@ -259,12 +266,12 @@ class RequestsPage(QWidget):
         answer = QMessageBox.question(
             self,
             "Approve selected",
-            f"Copy {len(genuine)} request(s), {format_bytes(total)} in all, to their department "
-            f"folders and verify each file?{dry}{extra}",
+            f"Copy {len(genuine)} request(s){folders}, {format_bytes(total)} in all, to their "
+            f"department folders and verify each file?{dry}{extra}",
         )
         if answer != QMessageBox.StandardButton.Yes:
             return
-        ids = [c.view.id for c in genuine]
+        ids = [v.id for v in lines]
         controller = self.ctx.controller
 
         def job() -> tuple[int, list[str]]:
@@ -296,7 +303,7 @@ class RequestsPage(QWidget):
         problems = []
         for card in cards:
             try:
-                self.ctx.controller.skip(card.view.id)
+                self.ctx.controller.skip_group(card.view.email_id)
             except Exception as exc:
                 problems.append(f"#{card.view.id}: {exc}")
         if problems:

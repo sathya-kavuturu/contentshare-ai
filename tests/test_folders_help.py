@@ -312,6 +312,27 @@ def test_missing_help_files_do_not_crash(qtbot: Any, tmp_path: Path) -> None:
     assert [t.title for t in load_topics(tmp_path)] == ["Hello"]
 
 
+def test_a_topic_left_behind_by_an_older_version_is_not_shown_twice(tmp_path: Path) -> None:
+    """An upgrade installed over the old files leaves ``04-settings.md`` beside the renamed
+    ``05-settings.md``; each topic must still appear once, in its newest wording."""
+    for name, text in {
+        "01-start.md": "# Start",
+        "04-settings.md": "# Old settings",
+        "05-settings.md": "# Settings explained",
+        "05-trouble.md": "# Old trouble",
+        "06-trouble.md": "# Troubleshooting",
+    }.items():
+        (tmp_path / name).write_text(text, encoding="utf-8")
+    topics = load_topics(tmp_path)
+    assert [t.slug for t in topics] == ["start", "settings", "trouble"]
+    assert [t.title for t in topics] == ["Start", "Settings explained", "Troubleshooting"]
+
+
+def test_the_real_help_topics_are_each_listed_once() -> None:
+    slugs = [t.slug for t in load_topics()]
+    assert len(slugs) == len(set(slugs))
+
+
 def test_help_shows_each_topic(qtbot: Any) -> None:
     page = HelpPage()
     qtbot.addWidget(page)

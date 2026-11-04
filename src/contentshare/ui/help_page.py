@@ -49,8 +49,11 @@ class Topic:
 
 
 def load_topics(folder: Path = HELP_DIR) -> list[Topic]:
-    """The topics in file-name order. A missing or unreadable file is skipped (and logged)."""
-    topics: list[Topic] = []
+    """The topics in file-name order. A missing or unreadable file is skipped (and logged).
+
+    Two files for one topic (``04-settings.md`` left behind by an older version next to
+    ``05-settings.md``) show once: the one with the higher number is the newer."""
+    found: dict[str, tuple[str, Topic]] = {}  # slug -> (file name, topic)
     for path in sorted(folder.glob("*.md")) if folder.is_dir() else []:
         match = _FILE.match(path.name)
         if match is None:
@@ -62,8 +65,8 @@ def load_topics(folder: Path = HELP_DIR) -> list[Topic]:
             continue
         first = text.lstrip().splitlines()[0] if text.strip() else ""
         title = first.lstrip("# ").strip() or match[2].title()
-        topics.append(Topic(match[2], title, text))
-    return topics
+        found[match[2]] = (path.name, Topic(match[2], title, text))  # a later file wins
+    return [topic for _name, topic in sorted(found.values(), key=lambda item: item[0])]
 
 
 def help_css(t: Theme) -> str:

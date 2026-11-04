@@ -5,6 +5,24 @@ uses [semantic versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- **One email is one request on screen.** An email that lists several folders is now one card with a
+  section for each folder (status, the path chosen, its own buttons), instead of one card per folder.
+  **Approve and copy**, **Skip all** and **Reject…** work on the whole email, the number on the
+  Requests icon counts emails, and the copy, check and History records still go folder by folder.
+- **One reply per email.** The reply names every folder that was copied and checked. With the
+  automatic reply it is sent when the last folder being copied is done, and only once.
+- **All the paths are listed.** When a folder name exists in several places on the storage server,
+  every path is shown (a long list scrolls inside the card) and you choose which one to use; the
+  list used to stop at five.
+
+### Fixed
+- **A window no longer flashes when Settings is opened.** Looking up the Windows start-up task
+  started a console program that opened and closed a window; it now runs hidden.
+- **Help no longer shows a topic twice** after an update. Old help pages left behind by an earlier
+  version were listed beside the renamed ones; the installer now clears the old program files
+  before an update, and Help shows each topic once in any case.
+
 ### Added
 - **History shows how long each copy took.** A new *Copy time* column (and, when a request is
   selected, its average speed) shows the time from the first file to the last check, and the

@@ -36,7 +36,11 @@ ContentShare never sees your password. To stop, use **Disconnect**.
 
 ![The Requests screen](screenshots/requests-light.png)
 
-Each request line is a card:
+Each email is one card. If it asks for several folders, the card has a numbered section for each
+folder, with the path found for it. When a folder name exists in several places on the server, all
+the paths are listed and you choose one with **Use this**. **Approve** copies every folder that is
+Ready, **Skip all** and **Reject** apply to all the open folders, and one reply covers the folders
+that were copied and checked. Each folder shows:
 
 | You see | It means |
 |---|---|

@@ -27,6 +27,8 @@ from contentshare.storage.repository import Repository
 
 log = logging.getLogger(__name__)
 
+MAX_CANDIDATES = 20  # paths kept on a request for the person to choose from (all are shown)
+
 
 @dataclass
 class Triage:
@@ -49,7 +51,7 @@ def triage_item(
     if not item.program.strip():
         return Triage(RequestState.NEEDS_REVIEW, "Could not tell which program was requested")
     hits = index.search(item.program, date_phrases=date_phrases(list(item.dates)), roots=roots)
-    ranked = rank_candidates(item, hits, config.parsing, today=today)
+    ranked = rank_candidates(item, hits, config.parsing, today=today, limit=MAX_CANDIDATES)
     if not ranked:
         return Triage(RequestState.NEEDS_REVIEW, f"No content found for “{item.program}”")
 

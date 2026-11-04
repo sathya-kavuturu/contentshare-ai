@@ -63,6 +63,9 @@ class ReplyDraft:
     subject: str
     body: str
     thread_id: str
+    # An email that asked for several folders gets ONE reply. ``request_id`` is the first of
+    # them and ``also`` are the others that the same message answers.
+    also: tuple[int, ...] = ()
 
     def with_body(self, body: str) -> ReplyDraft:
         """The user edited the text in the preview."""
@@ -104,9 +107,50 @@ class ReplyService:
                 f"The content has not been verified (request is {row['state']}); "
                 "a “shared” reply cannot be sent."
             )
-        template = self._department_template(row["department"])
-        body = render_template(template, self._values(row), REPLY_PLACEHOLDERS)
-        return self._draft(row, SHARED, body)
+        return self._shared_draft([row])
+
+    def draft_shared_for_email(self, email_id: int) -> ReplyDraft:
+        """One message for every line of the email whose copy was verified and that has not been
+        answered yet."""
+        rows = self._answerable(self.repo.requests_of_email(email_id))
+        if not rows:
+            raise ReplyError(
+                "No copy of this request has been verified yet; a “shared” reply cannot be sent."
+            )
+        return self._shared_draft(rows)
+
+    def _answerable(self, rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [
+            r for r in rows
+            if r["state"] == RequestState.VERIFIED and not self._has_active_reply(int(r["id"]))
+        ]  # fmt: skip
+
+    def _has_active_reply(self, request_id: int) -> bool:
+        return bool(
+            self.repo.list_replies(request_id, "SENT")
+            or self.repo.list_replies(request_id, "SENDING")
+        )
+
+    def _shared_draft(self, rows: list[dict[str, Any]]) -> ReplyDraft:
+        template = self._department_template(rows[0]["department"])
+        body = render_template(template, self._group_values(rows), REPLY_PLACEHOLDERS)
+        draft = self._draft(rows[0], SHARED, body)
+        return replace(draft, also=tuple(int(r["id"]) for r in rows[1:]))
+
+    def _group_values(self, rows: list[dict[str, Any]]) -> dict[str, str]:
+        """The reply's blanks for one folder, or for several folders named together."""
+        values = self._values(rows[0])
+        if len(rows) == 1:
+            return values
+        names = dict.fromkeys(self._values(r)["program"] for r in rows)
+        places = [str(r.get("destination_path") or "") for r in rows]
+        values.update(
+            program=", ".join(names),
+            destination_path="\n" + "\n".join(f"  - {place}" for place in places),
+            file_count=str(sum(int(r.get("file_count") or 0) for r in rows)),
+            total_size=format_bytes(sum(int(r.get("total_bytes") or 0) for r in rows)),
+        )
+        return values
 
     def draft_rejection(self, request_id: int, text: str | None = None) -> ReplyDraft:
         row = self._request(request_id)
@@ -173,6 +217,10 @@ class ReplyService:
                 "A reply for this request has already been sent or is being sent"
             ) from exc
 
+        # The other lines this one message answers are journaled with it (same tag), so none of
+        # them can be answered a second time, and a crash settles all of them together.
+        reply_ids = [reply_id, *self._begin_for_the_others(draft, row, token)]
+
         message = build_reply(
             to_addr=draft.to_addr,
             subject=draft.subject,
@@ -185,13 +233,46 @@ class ReplyService:
             sent_id = self.gateway.send_raw(encode_raw(message), draft.thread_id)
         except TransientGmailError as exc:
             log.warning("send interrupted for reply %s: %s", reply_id, exc)
-            return self._settle_uncertain(reply_id, draft.thread_id, token, str(exc))
+            return self._settle_uncertain(reply_ids, draft.thread_id, token, str(exc))
         except GmailError as exc:  # refused: certainly not sent
-            self.repo.finish_reply(reply_id, sent=False, error=str(exc))
+            for each in reply_ids:
+                self.repo.finish_reply(each, sent=False, error=str(exc))
             return ReplyResult("FAILED", reply_id, str(exc))
-        self.repo.finish_reply(reply_id, sent=True, gmail_message_id=sent_id)
-        self.repo.log(actor, "reply_confirmed", draft.request_id, reply_id=reply_id)
+        for each in reply_ids:
+            self.repo.finish_reply(each, sent=True, gmail_message_id=sent_id)
+        self.repo.log(actor, "reply_confirmed", draft.request_id, reply_id=reply_id,
+                      answered=len(reply_ids))  # fmt: skip
         return ReplyResult("SENT", reply_id, gmail_message_id=sent_id)
+
+    def _begin_for_the_others(
+        self, draft: ReplyDraft, row: dict[str, Any], token: str
+    ) -> list[int]:
+        """Journal the same reply for the other lines of the email (only ones that are verified,
+        belong to this email and have not been answered)."""
+        ids: list[int] = []
+        if draft.purpose != SHARED:
+            return ids
+        for request_id in draft.also:
+            other = self.repo.get_request(request_id)
+            if (
+                other is None
+                or other["state"] != RequestState.VERIFIED
+                or other["email_id"] != row["email_id"]
+            ):
+                continue
+            try:
+                ids.append(
+                    self.repo.begin_reply(
+                        request_id,
+                        purpose=draft.purpose,
+                        to_addr=draft.to_addr,
+                        body=draft.body,
+                        token=token,
+                    )
+                )
+            except sqlite3.IntegrityError:  # answered meanwhile
+                continue
+        return ids
 
     def _check_sendable(self, draft: ReplyDraft, row: dict[str, Any]) -> None:
         """Re-check everything against the database: the draft is only a proposal."""
@@ -209,17 +290,20 @@ class ReplyService:
             raise ReplyError("The reply is too long")
 
     def _settle_uncertain(
-        self, reply_id: int, thread_id: str, token: str, error: str
+        self, reply_ids: list[int], thread_id: str, token: str, error: str
     ) -> ReplyResult:
+        reply_id = reply_ids[0]
         lookup = self._find_sent(thread_id, token)
         if lookup.state == "unknown":  # could not look: stay SENDING and resolve later
             return ReplyResult(
                 "UNCERTAIN", reply_id, "Could not confirm whether the reply was sent"
             )
         if lookup.state == "found":
-            self.repo.finish_reply(reply_id, sent=True, gmail_message_id=lookup.message_id)
+            for each in reply_ids:
+                self.repo.finish_reply(each, sent=True, gmail_message_id=lookup.message_id)
             return ReplyResult("SENT", reply_id, gmail_message_id=lookup.message_id)
-        self.repo.finish_reply(reply_id, sent=False, error=f"Not sent: {error}")
+        for each in reply_ids:
+            self.repo.finish_reply(each, sent=False, error=f"Not sent: {error}")
         return ReplyResult("FAILED", reply_id, f"Not sent: {error}")
 
     def _find_sent(self, thread_id: str, token: str) -> SentLookup:
@@ -256,13 +340,14 @@ class ReplyService:
         return results
 
     def maybe_auto_reply(self, request_id: int) -> ReplyResult | None:
-        """Send the standard reply if the user asked for that on this request and it is
-        verified. Returns ``None`` when there is nothing to do."""
+        """Send the standard reply if the user asked for that and the copy is verified. An email
+        with several folders gets one reply, sent when the last folder being copied is done, and
+        it names the verified ones. Returns ``None`` when there is nothing to do."""
         row = self._request(request_id)
-        if not row["auto_reply"] or row["state"] != RequestState.VERIFIED:
+        rows = self.repo.requests_of_email(int(row["email_id"]))
+        if any(r["state"] in (RequestState.APPROVED, RequestState.COPYING) for r in rows):
+            return None  # the last one to finish sends it
+        answerable = [r for r in self._answerable(rows) if r["auto_reply"]]
+        if not answerable:
             return None
-        if self.repo.list_replies(request_id, "SENT") or self.repo.list_replies(
-            request_id, "SENDING"
-        ):
-            return None
-        return self.send(self.draft_shared(request_id), actor="system")
+        return self.send(self._shared_draft(answerable), actor="system")

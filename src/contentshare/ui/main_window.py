@@ -328,8 +328,7 @@ class MainWindow(QMainWindow):
             self.update_chrome()
 
     def update_chrome(self) -> None:
-        counts = self.controller.counts()
-        review = counts.get("NEEDS_REVIEW", 0) + counts.get("READY", 0) + counts.get("FAILED", 0)
+        review = self.controller.attention_count()  # emails, not folders
         self.nav.item(0).setText(f"Requests ({review})" if review else "Requests")
         active = len(self.controller.queue.active())
         self.nav.item(1).setText(f"Active copies ({active})" if active else "Active copies")

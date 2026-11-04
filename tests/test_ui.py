@@ -340,7 +340,7 @@ def test_reject_dialog_flow(rig: Rig, monkeypatch: pytest.MonkeyPatch, qtbot: An
     rig.ready_mail()
 
     class FakeReject:
-        def __init__(self, *_a: Any) -> None: ...
+        def __init__(self, *_a: Any, **_k: Any) -> None: ...
         def exec(self) -> int:
             return QDialog.DialogCode.Accepted
 
@@ -614,7 +614,7 @@ def test_department_editing(rig: Rig, monkeypatch: pytest.MonkeyPatch) -> None:
     class FakeDept:
         result_department = new
 
-        def __init__(self, *_a: Any) -> None: ...
+        def __init__(self, *_a: Any, **_k: Any) -> None: ...
         def exec(self) -> int:
             return QDialog.DialogCode.Accepted
 

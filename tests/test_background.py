@@ -347,6 +347,8 @@ def test_schtasks_uses_fixed_arguments_and_reports_failure(
     def fake_run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
         calls.append(args)
         assert kwargs.get("shell") is not True
+        # no console window may flash up when Settings looks the task up
+        assert kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW
         return subprocess.CompletedProcess(args, code["value"], "", "Access is denied")
 
     monkeypatch.setattr(startup_module.subprocess, "run", fake_run)

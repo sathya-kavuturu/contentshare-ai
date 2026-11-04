@@ -318,12 +318,16 @@ class ReplyDialog(QDialog):
 
 
 class RejectDialog(QDialog):
-    def __init__(self, view: RequestView, parent: QWidget | None = None):
+    def __init__(
+        self, view: RequestView, parent: QWidget | None = None, *, summary: str | None = None
+    ):
         super().__init__(parent)
         self.setWindowTitle(f"Reject request #{view.id}")
         self.resize(520, 300)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f"{view.sender_name or view.sender_email}: {view.requested}"))
+        layout.addWidget(
+            QLabel(f"{view.sender_name or view.sender_email}: {summary or view.requested}")
+        )
         self.reason = QLineEdit(placeholderText="Reason (kept in the history)")
         layout.addWidget(self.reason)
         self.notify = QCheckBox("Also send a reply to the requester")

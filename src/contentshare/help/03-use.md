@@ -2,12 +2,20 @@
 
 ## Requests
 
-Press **Check now** to read new mail. Each request line becomes a card:
+Press **Check now** to read new mail. **Each email is one card.** When an email asks for several
+folders (a list), the card has a numbered section for each folder, with its own status, the path
+that was found and its own buttons. Under them are the buttons for the whole email: **Approve and
+copy** copies every folder that is Ready, **Skip all** and **Reject…** apply to all the folders
+still open, and **Preview and send reply…** sends **one** reply that names every folder that was
+copied and checked (a folder that is not done yet is left out of it). With *Send the reply
+automatically* the reply goes out when the last folder being copied is done.
+
+Each folder shows one of:
 
 | You see | It means |
 |---|---|
 | **✓ Ready** | One clear match was found on the server. |
-| **⚠ Needs review** | Several matches, or something differs (date, language, part). Choose one with **Use this**, or **Search manually…**. |
+| **⚠ Needs review** | Several matches, or something differs (date, language, part). Every path found is listed, each with **Use this**; choose the one you want, or press **Search manually…**. |
 | **Sender not verified** | Gmail could not confirm who sent it. You must tick one more box before copying. |
 | **✖ Failed** | A copy did not verify. The reason is shown, with a **Retry copy** button. |
 

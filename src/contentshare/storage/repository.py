@@ -197,6 +197,16 @@ class Repository:
         with self.db.read() as conn:
             return _row(conn.execute(_REQUEST_SELECT + " WHERE r.id = ?", (request_id,)).fetchone())
 
+    def requests_of_email(self, email_id: int) -> list[dict[str, Any]]:
+        """Every line of one email, in the order they were asked for."""
+        with self.db.read() as conn:
+            return [
+                dict(r)
+                for r in conn.execute(
+                    _REQUEST_SELECT + " WHERE r.email_id = ? ORDER BY r.line_no", (email_id,)
+                )
+            ]
+
     def list_requests(self, states: Iterable[RequestState] | None = None) -> list[dict[str, Any]]:
         sql = _REQUEST_SELECT
         args: list[Any] = []

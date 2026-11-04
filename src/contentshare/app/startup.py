@@ -103,6 +103,9 @@ class SchTasks:
                 text=True,
                 timeout=30,
                 check=False,
+                # The program has no console of its own, so Windows would open one for
+                # schtasks.exe and close it again: a window flashing on screen.
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         except subprocess.SubprocessError as exc:  # includes timeouts
             raise OSError(f"schtasks did not run ({type(exc).__name__})") from exc

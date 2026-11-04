@@ -48,7 +48,7 @@ from contentshare.jobs.copy_job import (
     resolve_source,
 )
 from contentshare.jobs.queue import CopyQueue
-from contentshare.jobs.states import InvalidTransitionError, RequestState
+from contentshare.jobs.states import TERMINAL, InvalidTransitionError, RequestState
 from contentshare.matching.scorer import Candidate, rank_candidates
 from contentshare.matching.service import destination_for
 from contentshare.parsing.dates import date_phrases
@@ -159,6 +159,58 @@ class RequestView:
     @property
     def size_text(self) -> str:
         return format_bytes(self.total_bytes) if self.total_bytes is not None else ""
+
+
+_NEEDS_THE_PERSON = frozenset({"NEEDS_REVIEW", "READY", "FAILED"})
+_STILL_COPYING = frozenset({"APPROVED", "COPYING"})
+_CAN_SKIP = frozenset({"NEEDS_REVIEW", "READY", "FAILED"})
+_CAN_REJECT = frozenset({"NEEDS_REVIEW", "READY"})
+
+
+@dataclass(frozen=True)
+class EmailGroup:
+    """Everything one email asked for. An email that lists several folders is ONE request with a
+    line for each folder (each line is its own request in the database, so that each can be
+    chosen, copied and checked on its own)."""
+
+    email_id: int
+    items: tuple[RequestView, ...]  # in the order they were asked for
+
+    @property
+    def lead(self) -> RequestView:
+        return self.items[0]
+
+    @property
+    def id(self) -> int:
+        """The first line's number: stands for the email on screen."""
+        return self.items[0].id
+
+    @property
+    def many(self) -> bool:
+        return len(self.items) > 1
+
+    def in_states(self, states: Iterable[str]) -> list[RequestView]:
+        wanted = set(states)
+        return [v for v in self.items if v.state in wanted]
+
+    @property
+    def needs_the_person(self) -> bool:
+        """Something here waits for a decision, an approval or a retry."""
+        return any(v.state in _NEEDS_THE_PERSON for v in self.items)
+
+    @property
+    def still_copying(self) -> bool:
+        return any(v.state in _STILL_COPYING for v in self.items)
+
+
+@dataclass(frozen=True)
+class GroupApproveResult:
+    started: int  # lines whose copy was queued
+    dry_run: bool = False
+    files: int = 0
+    total_bytes: int = 0
+    problems: tuple[str, ...] = ()  # what stopped a line, or would stop it in a dry run
+    notes: tuple[str, ...] = ()
 
 
 def describe_item(data: dict[str, Any]) -> str:
@@ -280,6 +332,7 @@ class Controller:
         self._live: dict[int, _Live] = {}
         self._lock = threading.Lock()
         self._check_lock = threading.Lock()
+        self._reply_lock = threading.Lock()  # one automatic reply at a time (see _auto_reply)
         self._listeners: list[Callable[[Event], None]] = []
         self.queue = CopyQueue(
             CopyJobRunner(repo, config), concurrency=config.copy_options.concurrency
@@ -304,6 +357,29 @@ class Controller:
 
     def views(self, states: Iterable[RequestState] | None = None) -> list[RequestView]:
         return [make_view(r) for r in self.repo.list_requests(states)]
+
+    def groups(self, states: Iterable[RequestState] | None = None) -> list[EmailGroup]:
+        """The requests, one entry per email. An email is listed when any of its lines is in
+        ``states``, and then with all of its lines."""
+        wanted = None if states is None else {str(s) for s in states}
+        by_email: dict[int, list[RequestView]] = {}
+        for view in self.views():
+            by_email.setdefault(view.email_id, []).append(view)
+        return [
+            EmailGroup(email_id, tuple(sorted(items, key=lambda v: v.id)))
+            for email_id, items in by_email.items()
+            if wanted is None or any(v.state in wanted for v in items)
+        ]
+
+    def attention_count(self) -> int:
+        """Emails with something waiting for the person (the number beside Requests)."""
+        return sum(1 for g in self.groups() if g.needs_the_person)
+
+    def group(self, email_id: int) -> EmailGroup:
+        items = tuple(v for v in self.views() if v.email_id == email_id)
+        if not items:
+            raise ActionError("This request no longer exists")
+        return EmailGroup(email_id, tuple(sorted(items, key=lambda v: v.id)))
 
     def view(self, request_id: int) -> RequestView:
         row = self.repo.get_request(request_id)
@@ -579,6 +655,32 @@ class Controller:
         self._transition(request_id, S.REJECTED, reason=reason.strip()[:200] or "rejected")
         self._emit("changed", request_id)
 
+    def set_auto_reply_group(self, email_id: int, enabled: bool) -> None:
+        """The "send the reply by itself" choice, for every line of the email that is not done."""
+        for view in self.group(email_id).items:
+            if view.state not in TERMINAL:
+                self.set_auto_reply(view.id, enabled)
+
+    def skip_group(self, email_id: int) -> list[int]:
+        """Skip every line of the email that still waits for the person. Returns their numbers."""
+        ids = [v.id for v in self.group(email_id).in_states(_CAN_SKIP)]
+        if not ids:
+            raise ActionError("Nothing in this request can be skipped any more")
+        for request_id in ids:
+            self._transition(request_id, S.SKIPPED, reason="skipped by the user")
+        self._emit("changed", ids[0])
+        return ids
+
+    def reject_group(self, email_id: int, reason: str = "") -> list[int]:
+        """Reject every line of the email that has not been approved. Returns their numbers."""
+        ids = [v.id for v in self.group(email_id).in_states(_CAN_REJECT)]
+        if not ids:
+            raise ActionError("Nothing in this request can be rejected any more")
+        for request_id in ids:
+            self._transition(request_id, S.REJECTED, reason=reason.strip()[:200] or "rejected")
+        self._emit("changed", ids[0])
+        return ids
+
     # ------------------------------------------------------------------ approving and copying
     def approve(
         self, request_id: int, *, confirmed: bool, acknowledge_unverified: bool = False
@@ -616,6 +718,39 @@ class Controller:
         self._submit(request_id)
         self._emit("changed", request_id)
         return ApproveResult(started=True, note=note)
+
+    def approve_group(
+        self, email_id: int, *, confirmed: bool, acknowledge_unverified: bool = False
+    ) -> GroupApproveResult:
+        """Approve every Ready line of one email. A line that cannot be approved (its folder is
+        gone, a path is not allowed) is reported and the others go on."""
+        if not confirmed:
+            raise ActionError("Tick “Confirm copy” first: nothing is copied without it")
+        ready = self.group(email_id).in_states({"READY"})
+        if not ready:
+            raise ActionError("Nothing in this request is Ready to copy")
+        started, files, size = 0, 0, 0
+        problems: list[str] = []
+        notes: list[str] = []
+        dry = False
+        for view in ready:
+            try:
+                result = self.approve(
+                    view.id, confirmed=True, acknowledge_unverified=acknowledge_unverified
+                )
+            except ActionError as exc:
+                if len(ready) == 1:
+                    raise
+                problems.append(f"{view.requested}: {exc}")
+                continue
+            started += int(result.started)
+            dry = dry or result.dry_run
+            files += result.files
+            size += result.total_bytes
+            problems += [f"{view.requested}: {p}" for p in result.problems]
+            if result.note:
+                notes.append(f"{view.requested}: {result.note}" if len(ready) > 1 else result.note)
+        return GroupApproveResult(started, dry, files, size, tuple(problems), tuple(notes))
 
     def _recheck_on_disk(self, request_id: int, row: dict[str, Any], src: Path) -> str:
         """The index may be hours old. Look at the real folder before copying."""
@@ -703,13 +838,18 @@ class Controller:
             return
         if outcome.state == S.VERIFIED:
             self._emit("copy_finished", request_id, COPY_OK)
-            self._auto_reply(request_id)
         else:
             self._emit("copy_finished", request_id, outcome.error or "Copy did not finish")
+        # Also after a failure: the other folders of the same email may all be done by now, and
+        # the one reply for the email waits for the last of them.
+        self._auto_reply(request_id)
 
     def _auto_reply(self, request_id: int) -> None:
         try:
-            result = self._replies().maybe_auto_reply(request_id)
+            # Two folders of one email can finish together; the one reply for the email is
+            # worked out and sent by one of them at a time, so it is never sent twice.
+            with self._reply_lock:
+                result = self._replies().maybe_auto_reply(request_id)
         except AuthRequiredError:
             self._emit("reply_problem", request_id, "Gmail needs to be connected again")
         except (GmailError, ReplyError) as exc:
@@ -809,6 +949,13 @@ class Controller:
         """The editable “content shared” message. Raises ``ActionError`` unless verified."""
         try:
             return self._replies().draft_shared(request_id)
+        except ReplyError as exc:
+            raise ActionError(str(exc)) from exc
+
+    def reply_draft_for_email(self, email_id: int) -> ReplyDraft:
+        """One “content shared” message for everything of this email that was verified."""
+        try:
+            return self._replies().draft_shared_for_email(email_id)
         except ReplyError as exc:
             raise ActionError(str(exc)) from exc
 
