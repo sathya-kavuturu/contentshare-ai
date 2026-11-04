@@ -77,6 +77,10 @@ Every request, with a step-by-step record of what happened. **Export CSV** saves
 
 ## 8. The automatic check, tray and pop-ups
 
+* To see more requests at once, fold them: the arrow on a card folds it to one line, and **Collapse
+  all** / **Expand all** at the top of the list does every card. **« Fold menu** shrinks the menu on
+  the left to icons. Both are remembered.
+
 * How often mail is checked by itself (once a day at a set time, or every 15 or 30 minutes, every
   hour, or every 2, 3, 6 or 12 hours), **Start ContentShare when I sign in to Windows**, and the
   tray options are in Settings → General. A check only adds request cards.

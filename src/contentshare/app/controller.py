@@ -56,6 +56,11 @@ COPY_OK = "Copied and verified"  # the message of a successful ``copy_finished``
 S = RequestState
 GatewayFactory = Callable[[], GmailGateway]
 MANUAL_RESULTS = 20
+UI_OPTIONS = (
+    "appearance",
+    "sidebar_collapsed",
+    "compact_requests",
+)  # saved at once, see set_ui_option
 
 
 class ActionError(Exception):
@@ -863,12 +868,18 @@ class Controller:
         return {**stats, "last_scan": max(done) if done else None, "roots": len(scans)}
 
     # ------------------------------------------------------------------ settings
-    def set_appearance(self, appearance: str) -> None:
-        """Remember the theme at once. Nothing else changes (and no copy is disturbed), so it is
-        allowed while copies run, unlike ``apply_config``."""
-        config = AppConfig.model_validate({**self.config.model_dump(), "appearance": appearance})
+    def set_ui_option(self, name: str, value: object) -> None:
+        """Remember a look-and-feel choice at once (theme, folded menu, folded request cards).
+        Nothing else changes and no copy is disturbed, so it is allowed while copies run, unlike
+        ``apply_config``."""
+        if name not in UI_OPTIONS:
+            raise ValueError(f"{name} is not a window option")
+        config = AppConfig.model_validate({**self.config.model_dump(), name: value})
         save_config(config, self._config_path)
         self.config = config
+
+    def set_appearance(self, appearance: str) -> None:
+        self.set_ui_option("appearance", appearance)
 
     def apply_config(self, config: AppConfig, *, persist: bool = True) -> None:
         """Use new settings. Refused while copies run, so a job never changes folders midway."""

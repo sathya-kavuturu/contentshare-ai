@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -57,6 +59,7 @@ class RequestsPage(QWidget):
         self._states: dict[int, CardState] = {}
         self._cards: list[RequestCard] = []
         self._refresh_pending = False
+        self._compact = ctx.controller.config.compact_requests  # new cards start folded or open
 
         root = QVBoxLayout(self)
         root.setContentsMargins(32, 28, 26, 16)
@@ -111,6 +114,10 @@ class RequestsPage(QWidget):
         bar.addWidget(self.bulk_approve)
         bar.addWidget(self.bulk_skip)
         bar.addStretch(1)
+        self.fold_all = QPushButton("Collapse all")
+        self.fold_all.setAccessibleName("Collapse or expand every request")
+        self.fold_all.clicked.connect(self.toggle_all_collapsed)
+        bar.addWidget(self.fold_all)
         self.filter = Combo()
         self.filter.setAccessibleName("Show")
         for name, _states in FILTERS:
@@ -147,8 +154,14 @@ class RequestsPage(QWidget):
         live = {v.id for v in controller.views()}
         self._states = {k: s for k, s in self._states.items() if k in live}
         for view in views:
-            state = self._states.setdefault(view.id, CardState())
-            card = RequestCard(view, self.ctx, state, on_selection_changed=self._update_bulk)
+            state = self._states.setdefault(view.id, CardState(collapsed=self._compact))
+            card = RequestCard(
+                view,
+                self.ctx,
+                state,
+                on_selection_changed=self._update_bulk,
+                on_fold_changed=self._folded,
+            )
             self.body.add(card)
             self._cards.append(card)
 
@@ -168,6 +181,29 @@ class RequestsPage(QWidget):
             "Open Settings → Index and refresh it."
         )
         self._update_bulk()
+        self._update_fold_button()
+
+    def _folded(self) -> None:
+        """A card was folded or opened: the list pins each card's height, so measure again."""
+        self.body.fit()
+        self._update_fold_button()
+
+    def _update_fold_button(self) -> None:
+        self.fold_all.setEnabled(bool(self._cards))
+        every_card_folded = bool(self._cards) and all(c.state.collapsed for c in self._cards)
+        self.fold_all.setText("Expand all" if every_card_folded else "Collapse all")
+
+    def toggle_all_collapsed(self) -> None:
+        """One button: fold every request to a short line, or (when all are folded) open them
+        all. New requests that arrive later follow the last choice."""
+        fold = not (self._cards and all(c.state.collapsed for c in self._cards))
+        for card in self._cards:
+            card.set_collapsed(fold)
+        self.body.fit()
+        self._compact = fold
+        with contextlib.suppress(OSError, ValueError):  # only "remember it" can fail
+            self.ctx.controller.set_ui_option("compact_requests", fold)
+        self._update_fold_button()
 
     def _update_bulk(self) -> None:
         chosen = [c for c in self._cards if c.state.selected]

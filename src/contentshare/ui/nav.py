@@ -1,4 +1,6 @@
-"""The list of screens on the left: an icon, the name, and a count pill when something waits."""
+"""The list of screens on the left: an icon, the name, and a count pill when something waits.
+
+Folded (see ``NavList.set_collapsed``) it shows only the icons, with the name as a tooltip."""
 
 from __future__ import annotations
 
@@ -42,6 +44,8 @@ def split_count(text: str) -> tuple[str, int]:
 
 
 class NavDelegate(QStyledItemDelegate):
+    collapsed = False  # icons only
+
     def paint(
         self,
         painter: QPainter,
@@ -62,6 +66,10 @@ class NavDelegate(QStyledItemDelegate):
         ink = QColor(t.text if selected else t.muted)
 
         icon_family = icon_font_family()
+        if self.collapsed:
+            self._paint_folded(painter, box, name, count, selected, icon_family)
+            painter.restore()
+            return
         left = box.left() + 12
         if icon_family and name in _GLYPHS:
             icon_font = QFont(icon_family)
@@ -100,6 +108,43 @@ class NavDelegate(QStyledItemDelegate):
             painter.drawText(pill, int(Qt.AlignmentFlag.AlignCenter), text)
         painter.restore()
 
+    @staticmethod
+    def _paint_folded(
+        painter: QPainter,
+        box: QRectF,
+        name: str,
+        count: int,
+        selected: bool,
+        icon_family: str | None,
+    ) -> None:
+        t = current_theme()
+        centre = int(Qt.AlignmentFlag.AlignCenter)
+        if icon_family and name in _GLYPHS:
+            font = QFont(icon_family)
+            font.setPixelSize(18)
+            text = _GLYPHS[name]
+        else:  # no icon font on this PC: the first letter
+            font = QFont()
+            font.setPixelSize(15)
+            font.setWeight(QFont.Weight.DemiBold)
+            text = name[:1]
+        painter.setFont(font)
+        painter.setPen(QColor(t.accent if selected else t.muted))
+        painter.drawText(box, centre, text)
+        if count:
+            pill_font = QFont()
+            pill_font.setPixelSize(10)
+            pill_font.setWeight(QFont.Weight.Bold)
+            painter.setFont(pill_font)
+            label = str(count) if count < 100 else "99+"
+            width = max(16, QFontMetrics(pill_font).horizontalAdvance(label) + 10)
+            pill = QRectF(box.right() - width, box.top() + 2, width, 14)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor(t.accent))
+            painter.drawRoundedRect(pill, 7, 7)
+            painter.setPen(QColor(t.accent_text))
+            painter.drawText(pill, centre, label)
+
     def sizeHint(  # noqa: N802 - Qt override
         self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
     ) -> QSize:
@@ -114,3 +159,21 @@ class NavList(QListWidget):
         self.setMouseTracking(True)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._delegate = self.itemDelegate()
+
+    def set_collapsed(self, collapsed: bool) -> None:
+        """Show only the icons (and a small count), or the full names again."""
+        delegate = self.itemDelegate()
+        if isinstance(delegate, NavDelegate):
+            delegate.collapsed = collapsed
+        self.refresh_tooltips()
+        self.viewport().update()
+
+    def refresh_tooltips(self) -> None:
+        """Folded, the name (and count) is the only label there is."""
+        delegate = self.itemDelegate()
+        folded = isinstance(delegate, NavDelegate) and delegate.collapsed
+        for row in range(self.count()):
+            item = self.item(row)
+            if item is not None:
+                item.setToolTip(item.text() if folded else "")

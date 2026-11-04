@@ -323,6 +323,9 @@ class AppConfig(BaseModel):
     index: IndexSettings = Field(default_factory=IndexSettings)
     gmail: GmailSettings = Field(default_factory=GmailSettings)
     appearance: Literal["system", "light", "dark"] = "system"  # follow Windows, or force one
+    # Window layout the person chose (remembered, never needed for anything to work)
+    sidebar_collapsed: bool = False  # the menu on the left folded to icons
+    compact_requests: bool = False  # request cards folded to one short line
     auto_reply_default: bool = False
     # Rehearsal: approving checks everything (paths, space, names) and reports what would be
     # copied, but nothing is copied and no email is sent.

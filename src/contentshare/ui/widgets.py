@@ -203,6 +203,7 @@ class StackBody(QWidget):
 
     def remove(self, widget: QWidget) -> None:
         self.stack.removeWidget(widget)
+        widget.hide()  # it is deleted a moment later; until then it must not show through
         widget.deleteLater()
 
     def fit(self) -> None:

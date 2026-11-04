@@ -50,6 +50,12 @@ APPEARANCES = [("system", "Same as Windows"), ("light", "Light"), ("dark", "Dark
 SLOW_OPEN_MS = 250  # a Settings screen slower than this to appear is written to the log
 
 
+def _settings_of(config: AppConfig) -> dict[str, Any]:
+    """The settings that have boxes on this screen: the window options (theme, folded menu and
+    cards) are saved the moment they change and do not count."""
+    return config.model_dump(exclude={"appearance", "sidebar_collapsed", "compact_requests"})
+
+
 def interval_text(minutes: int) -> str:
     if minutes == 0:
         return "Once a day, at a set time"
@@ -533,7 +539,9 @@ class SettingsPage(QWidget):
         somewhere else since (an unsaved edit is kept), and the slow readings (Gmail sign-in,
         Windows start-up, index size) are made in the background."""
         started = time.perf_counter()
-        if self._loaded is not self.ctx.controller.config:
+        if self._loaded is None or _settings_of(self._loaded) != _settings_of(
+            self.ctx.controller.config
+        ):
             self.load()
         else:
             self._refresh_status()

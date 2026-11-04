@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import (
@@ -10,6 +12,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QListWidgetItem,
     QMainWindow,
+    QPushButton,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -39,6 +42,7 @@ from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
 PAGES = ["Requests", "Active copies", "History", "Settings", "Help"]
 
+SIDEBAR_WIDE, SIDEBAR_NARROW = 236, 68  # the menu on the left: full, or folded to icons
 WARM_UP_DELAY_MS = 800
 UPDATE_CHECK_DELAY_MS = 4000  # let the window appear and the first work settle before the check
 
@@ -50,8 +54,8 @@ def _banner(text: str) -> QLabel:
     return label
 
 
-def _brand() -> QWidget:
-    """The program's icon and name at the top of the sidebar."""
+def _brand() -> tuple[QWidget, QLabel]:
+    """The program's icon and name at the top of the sidebar (and the name, to hide it)."""
     holder = QWidget()
     row = QHBoxLayout(holder)
     row.setContentsMargins(20, 22, 16, 14)
@@ -62,7 +66,7 @@ def _brand() -> QWidget:
     name = QLabel("ContentShare")
     name.setObjectName("brand")
     row.addWidget(name, 1)
-    return holder
+    return holder, name
 
 
 class MainWindow(QMainWindow):
@@ -97,21 +101,8 @@ class MainWindow(QMainWindow):
 
         body = QHBoxLayout()
         body.setSpacing(0)
-        side = QFrame()
-        side.setObjectName("sidebar")
-        side.setFixedWidth(236)
-        side_layout = QVBoxLayout(side)
-        side_layout.setContentsMargins(0, 0, 0, 14)
-        side_layout.setSpacing(4)
-        side_layout.addWidget(_brand())
-        self.nav = NavList()
-        self.nav.setAccessibleName("Screens")
-        for name in PAGES:
-            self.nav.addItem(QListWidgetItem(name))
-        side_layout.addWidget(self.nav, 1)
-        # Bottom left: "a new version is available" (only when an updater was given)
-        self.update_card = self._add_update_card(side_layout, updater)
-        body.addWidget(side)
+        self._build_sidebar(updater)
+        body.addWidget(self.side)
 
         self.stack = QStackedWidget()
         self.requests = RequestsPage(self.ctx)
@@ -127,9 +118,68 @@ class MainWindow(QMainWindow):
 
         self.nav.currentRowChanged.connect(self._switch)
         self.nav.setCurrentRow(0)
+        self.set_sidebar_collapsed(controller.config.sidebar_collapsed, remember=False)
         self._connect_services()
         self.statusBar().showMessage("Ready")
         self.update_chrome()
+
+    # ------------------------------------------------------------------ the menu on the left
+    def _build_sidebar(self, updater: Updater | None) -> None:
+        self.side = QFrame()
+        self.side.setObjectName("sidebar")
+        side_layout = QVBoxLayout(self.side)
+        side_layout.setContentsMargins(0, 0, 0, 14)
+        side_layout.setSpacing(4)
+        brand, self._brand_name = _brand()
+        side_layout.addWidget(brand)
+        self._brand_row = brand.layout()
+        self.nav = NavList()
+        self.nav.setAccessibleName("Screens")
+        for name in PAGES:
+            self.nav.addItem(QListWidgetItem(name))
+        side_layout.addWidget(self.nav, 1)
+        self.side_toggle = QPushButton()
+        self.side_toggle.setFlat(True)
+        self.side_toggle.clicked.connect(lambda _c=False: self.toggle_sidebar())
+        fold_row = QHBoxLayout()
+        fold_row.setContentsMargins(12, 0, 12, 0)
+        fold_row.addWidget(self.side_toggle)
+        side_layout.addLayout(fold_row)
+        # Bottom left: "a new version is available" (only when an updater was given). It lives in
+        # a holder so the whole box can be put away while the menu is folded.
+        self._update_holder = QWidget()
+        holder_layout = QVBoxLayout(self._update_holder)
+        holder_layout.setContentsMargins(0, 0, 0, 0)
+        self.update_card = self._add_update_card(holder_layout, updater)
+        side_layout.addWidget(self._update_holder)
+
+    @property
+    def sidebar_collapsed(self) -> bool:
+        return self._sidebar_collapsed
+
+    def toggle_sidebar(self) -> None:
+        self.set_sidebar_collapsed(not self._sidebar_collapsed)
+
+    def set_sidebar_collapsed(self, collapsed: bool, *, remember: bool = True) -> None:
+        """Fold the menu to icons, or show the names again. ``remember`` keeps the choice for the
+        next start (not done when it is opened only to show an update)."""
+        self._sidebar_collapsed = collapsed
+        self.side.setFixedWidth(SIDEBAR_NARROW if collapsed else SIDEBAR_WIDE)
+        self._brand_name.setVisible(not collapsed)
+        if self._brand_row is not None:
+            self._brand_row.setContentsMargins(
+                *((20, 22, 20, 14) if collapsed else (20, 22, 16, 14))
+            )
+        self.nav.set_collapsed(collapsed)
+        self._update_holder.setVisible(not collapsed)
+        self.side_toggle.setText("»" if collapsed else "«   Fold menu")
+        self.side_toggle.setToolTip(
+            "Show the menu names" if collapsed else "Fold the menu to icons"
+        )
+        self.side_toggle.setAccessibleName("Show the menu" if collapsed else "Fold the menu")
+        if remember:
+            with contextlib.suppress(OSError, ValueError):  # only "remember it" can fail
+                self.controller.set_ui_option("sidebar_collapsed", collapsed)
 
     def _add_update_card(self, layout: QVBoxLayout, updater: Updater | None) -> UpdateCard | None:
         if updater is None:
@@ -186,9 +236,13 @@ class MainWindow(QMainWindow):
 
     def check_for_updates(self, manual: bool = True) -> None:
         if self.update_card is not None:
+            if manual and self._sidebar_collapsed:
+                self.set_sidebar_collapsed(False, remember=False)  # its answer appears there
             self.update_card.check(manual=manual)
 
     def _update_found(self, version: str) -> None:
+        if self._sidebar_collapsed:
+            self.set_sidebar_collapsed(False, remember=False)  # the box is in the menu
         self.say(f"ContentShare {version} is available. See the box at the bottom left.")
         self._toast(
             Toast(
@@ -279,6 +333,7 @@ class MainWindow(QMainWindow):
         self.nav.item(0).setText(f"Requests ({review})" if review else "Requests")
         active = len(self.controller.queue.active())
         self.nav.item(1).setText(f"Active copies ({active})" if active else "Active copies")
+        self.nav.refresh_tooltips()
         self.dry_banner.setVisible(self.controller.dry_run)
         self.gmail_banner.setVisible(not self.controller.gmail_connected())
         if self.tray is not None:

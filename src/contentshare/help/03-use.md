@@ -17,6 +17,16 @@ To copy a Ready card:
 2. Tick **Confirm copy**.
 3. Press **Approve and copy** (in dry-run mode the button says **Check (dry run)**).
 
+**Fewer, shorter cards.** The small arrow at the left of a card (▾) folds it to one short line
+showing only the title, the sender's name and the department, plus its status; press it again (▸)
+to open it. **Collapse all** at the top of the list folds every request, and the same button then
+reads **Expand all**. Folding only changes what you see: ticks you made stay, and new requests
+that arrive later follow the last choice. The choice is remembered for next time.
+
+The menu on the left can be folded too: **« Fold menu** at its bottom leaves just the icons (hover
+one for its name; the number on the Requests icon is how many are waiting), and **»** brings the
+names back. If an update is found while it is folded, it opens so you can see the update box.
+
 **Skip** hides a request (it stays in the History). **Reject…** can send the sender a short
 "cannot share" reply, which you can edit first.
 

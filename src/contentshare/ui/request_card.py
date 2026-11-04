@@ -38,6 +38,7 @@ from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
 _GMAIL_ID = re.compile(r"^[0-9a-f]{6,32}$")
+_INDENT = 64  # past the fold arrow and the tick box, so text lines up with the title
 OPEN_STATES = {"NEW", "NEEDS_REVIEW", "READY", "APPROVED", "COPYING", "FAILED", "VERIFIED"}
 
 
@@ -49,6 +50,7 @@ class CardState:
     confirm: bool = False
     acknowledge: bool = False
     show_text: bool = False
+    collapsed: bool = False  # folded to one short line (title, sender, department)
 
 
 def _label(text: str = "", role: str | None = None, wrap: bool = True) -> QLabel:
@@ -118,11 +120,13 @@ class RequestCard(QFrame):
         state: CardState,
         *,
         on_selection_changed: Callable[[], None],
+        on_fold_changed: Callable[[], None] | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.view, self.ctx, self.state = view, ctx, state
         self._on_selection = on_selection_changed
+        self._on_fold = on_fold_changed or (lambda: None)
         self.setObjectName("card")
         self.setAccessibleName(f"Request {view.id}")
         self._buttons: list[QPushButton] = []
@@ -131,28 +135,23 @@ class RequestCard(QFrame):
     # ------------------------------------------------------------------ layout
     def _build(self) -> None:
         v = self.view
-        root = QVBoxLayout(self)
+        root = self._root = QVBoxLayout(self)
         root.setContentsMargins(18, 16, 18, 16)
         root.setSpacing(10)
 
-        head = QHBoxLayout()
-        head.setSpacing(10)
-        self.select = QCheckBox()
-        self.select.setAccessibleName(f"Select request {v.id}")
-        self.select.setChecked(self.state.selected)
-        self.select.toggled.connect(self._toggle_selected)
-        head.addWidget(self.select)
-        title = _label(v.requested or "(nothing recognised)", "heading", wrap=False)
-        head.addWidget(title, 1)
-        style = style_for(v.state)
-        self.status = _chip(style.text, style.tone)
-        head.addWidget(self.status)
-        root.addLayout(head)
+        self._build_head(root)
+
+        # Everything else is folded away with the arrow.
+        self.details = QWidget()
+        body = QVBoxLayout(self.details)
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(10)
+        root.addWidget(self.details)
 
         who = f"{v.sender_name} · {v.sender_email}" if v.sender_name else v.sender_email
         meta = QHBoxLayout()
         meta.setSpacing(8)
-        meta.addSpacing(26)  # lines up with the title, past the tick box
+        meta.addSpacing(_INDENT)
         meta.addWidget(
             _label(
                 f"{who}  ·  {v.department or 'not in any department'}  ·  "
@@ -166,15 +165,15 @@ class RequestCard(QFrame):
             meta.addWidget(_chip("✔ Sender verified", "neutral"))
         else:
             meta.addWidget(_chip("⚠ Sender NOT verified", "warn"))
-        root.addLayout(meta)
+        body.addLayout(meta)
 
-        self._subject_row(root)
+        self._subject_row(body)
         if v.reason:
-            root.addWidget(_label(v.reason, "muted"))
+            body.addWidget(_label(v.reason, "muted"))
         for warning in v.warnings:
             if "could not be verified" in warning:
                 continue  # the sender chip and the reason above already say it
-            root.addLayout(_note_row(_chip(f"⚠ {warning}", "warn")))
+            body.addLayout(_note_row(_chip(f"⚠ {warning}", "warn")))
 
         {
             "NEEDS_REVIEW": self._review_section,
@@ -183,7 +182,61 @@ class RequestCard(QFrame):
             "APPROVED": self._copying_section,
             "COPYING": self._copying_section,
             "VERIFIED": self._verified_section,
-        }.get(v.state, self._finished_section)(root)
+        }.get(v.state, self._finished_section)(body)
+        self.set_collapsed(self.state.collapsed)
+
+    def _build_head(self, root: QVBoxLayout) -> None:
+        v = self.view
+        head = QHBoxLayout()
+        head.setSpacing(10)
+        self.fold = QPushButton("▾")
+        self.fold.setProperty("fold", True)
+        self.fold.setFlat(True)
+        self.fold.clicked.connect(self.toggle_collapsed)
+        head.addWidget(self.fold)
+        self.select = QCheckBox()
+        self.select.setAccessibleName(f"Select request {v.id}")
+        self.select.setChecked(self.state.selected)
+        self.select.toggled.connect(self._toggle_selected)
+        head.addWidget(self.select)
+        title = _label(v.requested or "(nothing recognised)", "heading", wrap=False)
+        head.addWidget(title, 1)
+        style = style_for(v.state)
+        self.status = _chip(style.text, style.tone)
+        head.addWidget(self.status)
+        root.addLayout(head)
+
+        # Folded: just who asked and for which department, under the title.
+        self.summary = QWidget()
+        short = QHBoxLayout(self.summary)
+        short.setContentsMargins(0, 0, 0, 0)
+        short.addSpacing(_INDENT)
+        short.addWidget(
+            _label(
+                f"{v.sender_name or v.sender_email}  ·  {v.department or 'not in any department'}",
+                "small",
+                wrap=False,
+            ),
+            1,
+        )
+        root.addWidget(self.summary)
+
+    # ------------------------------------------------------------------ folding
+    def set_collapsed(self, collapsed: bool) -> None:
+        """Fold the card to one short line, or open it again. Kept across list refreshes."""
+        self.state.collapsed = collapsed
+        self.details.setVisible(not collapsed)
+        self.summary.setVisible(collapsed)
+        self.fold.setText("▸" if collapsed else "▾")
+        action = "Show" if collapsed else "Hide"
+        self.fold.setToolTip(f"{action} the details of this request")
+        self.fold.setAccessibleName(f"{action} details of request {self.view.id}")
+        self._root.setContentsMargins(18, 10 if collapsed else 16, 18, 10 if collapsed else 16)
+        self._root.setSpacing(4 if collapsed else 10)
+
+    def toggle_collapsed(self) -> None:
+        self.set_collapsed(not self.state.collapsed)
+        self._on_fold()
 
     def _subject_row(self, root: QVBoxLayout) -> None:
         row = QHBoxLayout()

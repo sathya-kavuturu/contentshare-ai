@@ -187,7 +187,8 @@ def test_ready_card_shows_everything_the_wireframe_promises(rig: Rig) -> None:
     assert "Anita R." in texts and "Media Team" in texts
     assert "SunriseTalk_EN" in texts and "confidence" in texts
     assert "copy to" in texts.lower()  # the small heading above the destination
-    assert [b.text() for b in card.findChildren(QPushButton) if b.text()][:2] == [
+    assert [b.text() for b in card.findChildren(QPushButton) if b.text()][:3] == [
+        "▾",  # the arrow that folds the card
         "▸ Show text",
         "Change content…",
     ]

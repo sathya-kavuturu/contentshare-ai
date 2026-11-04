@@ -6,6 +6,11 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Fold the menu on the left** to icons only (**« Fold menu** at its bottom; names appear as tooltips,
+  and the Requests icon keeps its count). It opens by itself if an update is found.
+- **Fold requests to one short line** showing the title, sender name and department: an arrow on each
+  card, and one **Collapse all / Expand all** button above the list. Ticks are kept, new requests follow
+  the last choice, and both choices are remembered.
 - **Each department can have its own folders to search** (Settings → Departments → *Search in*): a
   server, drive or folder per department. A department with none uses the general storage folders,
   as before. Requests are looked for only in the requesting department's folders, and a pick must be
@@ -69,6 +74,8 @@ uses [semantic versioning](https://semver.org/).
 - Settings and Help are laid out in the background shortly after start, so they open at once.
 
 ### Fixed
+- A card removed from the Requests list could linger on screen for a moment, showing through the new
+  cards; it is now hidden at once.
 - **Settings flipped back to light mode and was slow to open.** Opening Settings re-applied the saved
   theme, which undid an unsaved Dark choice and restyled the whole window, and it read the Gmail
   sign-in, Windows start-up entry and index size before showing anything. The boxes are now filled
