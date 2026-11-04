@@ -466,17 +466,29 @@ class LoginDialog(QDialog):
 
 
 class AddFolderDialog(QDialog):
-    """Name one more folder for the same email. The lines of the email that were not searched are
-    listed: click one to use it as the name."""
+    """Add one more folder to the same email: browse for any folder or file, or type a name to
+    search for. The lines of the email that were not searched are listed (when there are any):
+    click one to use it as the name."""
 
-    def __init__(self, lines: list[str], parent: QWidget | None = None):
+    def __init__(self, lines: list[str], parent: QWidget | None = None, *, start_folder: str = ""):
         super().__init__(parent)
         self.setWindowTitle("Add a folder to this request")
-        self.resize(560, 320 if lines else 170)
+        self.resize(560, 360 if lines else 230)
+        self._start = start_folder
+        self.picked: str | None = None  # a folder or file chosen with Browse
         layout = QVBoxLayout(self)
-        intro = QLabel("Type the name of the folder to add. You then choose it on the server.")
+        intro = QLabel("Pick the folder or file yourself:")
         intro.setWordWrap(True)
         layout.addWidget(intro)
+        pick_row = QHBoxLayout()
+        self.browse_folder = QPushButton("Browse for a folder…")
+        self.browse_folder.clicked.connect(self._browse_folder)
+        self.browse_file = QPushButton("Browse for a file…")
+        self.browse_file.clicked.connect(self._browse_file)
+        pick_row.addWidget(self.browse_folder)
+        pick_row.addWidget(self.browse_file)
+        pick_row.addStretch(1)
+        layout.addLayout(pick_row)
         self.name = QLineEdit(placeholderText="Folder name")
         self.name.setAccessibleName("Folder name")
         self.name.setMaxLength(200)
@@ -490,11 +502,27 @@ class AddFolderDialog(QDialog):
                 self.lines.addItem(line)
             self.lines.currentTextChanged.connect(self._use_line)
             layout.addWidget(self.lines, 1)
+        layout.addWidget(QLabel("Or type a name to search for:"))
         layout.addWidget(self.name)
         self._box = _buttons(self, "Search for it")
         layout.addWidget(self._box)
         self.name.textChanged.connect(self._check)
         self._check()
+
+    def _browse_folder(self) -> None:
+        chosen = QFileDialog.getExistingDirectory(self, "Choose the folder to add", self._start)
+        if chosen:
+            self._pick(chosen)
+
+    def _browse_file(self) -> None:
+        chosen, _filter = QFileDialog.getOpenFileName(self, "Choose the file to add", self._start)
+        if chosen:
+            self._pick(chosen)
+
+    def _pick(self, chosen: str) -> None:
+        """A folder or file was chosen: that is all that is needed, so the box closes."""
+        self.picked = chosen.replace("/", "\\")
+        super().accept()
 
     def _use_line(self, text: str) -> None:
         if text:

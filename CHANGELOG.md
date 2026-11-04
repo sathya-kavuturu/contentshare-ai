@@ -6,9 +6,10 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
-- **Add a folder to the same request.** A card has an *Add a folder...* button. Click a line of the
-  email that was not searched (or type a name), search for it, and it becomes one more section of the
-  same request and the same reply. Nothing is left behind if you do not choose a folder.
+- **Add a folder to the same request.** Every card has an *Add a folder...* button, with or without
+  unsearched text. Browse for any folder or file and pick it, or type a name (or click a line of the
+  email that was not searched) and choose the match. It becomes one more section of the same request
+  and the same reply. Nothing is left behind if you do not choose a folder.
 - **Users and passwords.** Every time ContentShare opens it asks you to sign in: choose your
   name and type your password, or create a new user. A password can be anything. Passwords are
   stored only as salted hashes. Closing the box quits the app; nothing can be approved, skipped
@@ -23,6 +24,10 @@ uses [semantic versioning](https://semver.org/).
   Windows Credential Manager, not in the settings file. It is off until you switch it on.
 
 ### Changed
+- **A clearer reply.** The reply to the requester now lists every copied folder on its own line (a folder
+  added with *Add a folder* is named too), then the total files and size. It no longer contains the
+  destination folder or any network address, and `{destination_path}` now shows the folder names.
+  A saved setting that still has the old wording moves to the new one; a text you changed stays.
 - **One menu icon.** The fold button at the bottom of the menu is gone. The **☰** icon at the top is now
   drawn as three clean bars (no box around it) and is the only one.
 - **The user guide is rewritten** in plain steps, with new pictures of every screen (Requests, a folder

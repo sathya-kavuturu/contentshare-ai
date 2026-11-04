@@ -11,16 +11,34 @@ import re
 from collections.abc import Mapping
 
 REPLY_PLACEHOLDERS = frozenset(
-    {"requester_name", "program", "destination_path", "file_count", "total_size", "date"}
-)
+    {
+        "requester_name", "program", "folders", "file_text", "destination_path", "file_count",
+        "total_size", "date",
+    }
+)  # fmt: skip
 SUBFOLDER_PLACEHOLDERS = frozenset({"program", "date", "department"})
 
+# {folders} is one folder per line (also a folder added to the request by hand). The network
+# location of the destination is never written in a reply.
 DEFAULT_REPLY_TEMPLATE = (
+    "Hello {requester_name},\n\n"
+    "The content you requested has been shared and checked:\n\n"
+    "{folders}\n\n"
+    "Total: {file_text}, {total_size}.\n\n"
+    "Please let me know if anything is missing.\n"
+)
+# The wording used before; a saved setting that still has it moves to the new wording.
+LEGACY_REPLY_TEMPLATE = (
     "Hello {requester_name},\n\n"
     "The content you requested ({program}, {date}) has been shared: {file_count} files, "
     "{total_size}, at {destination_path}.\n\n"
     "Please let me know if anything is missing.\n"
 )
+
+
+def current_reply_template(template: str) -> str:
+    return DEFAULT_REPLY_TEMPLATE if template == LEGACY_REPLY_TEMPLATE else template
+
 
 _PLACEHOLDER = re.compile(r"\{([^{}]*)\}")
 

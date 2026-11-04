@@ -115,12 +115,11 @@ def test_default_template_is_filled_in(w: MailWorld) -> None:
     assert draft.subject == f"Re: {EXACT}"
     assert draft.thread_id.startswith("t")
     assert "Hello Anita R.," in draft.body
-    assert "Sunrise Talk" in draft.body
-    assert "2026-10-12" in draft.body  # the date that was asked for
-    assert "3 files" in draft.body
-    assert "2.5 GB" in draft.body
-    assert str(w.media) in draft.body
+    assert "  - 2026-10-12_SunriseTalk_EN" in draft.body.splitlines()  # on its own line
+    assert "Total: 3 files, 2.5 GB." in draft.body
     assert "{" not in draft.body
+    # the network location of the destination is private: no path of any kind
+    assert str(w.media) not in draft.body and chr(92) not in draft.body and ":/" not in draft.body
 
 
 def test_department_template_wins_and_missing_name_falls_back(w: MailWorld) -> None:
@@ -131,6 +130,9 @@ def test_department_template_wins_and_missing_name_falls_back(w: MailWorld) -> N
 
 def test_date_defaults_to_today_when_the_request_has_none(w: MailWorld) -> None:
     request_id = verified_request(w, subject="Annual Day 2025", message_id="m2")
+    w.replies.config = w.replies.config.model_copy(
+        update={"default_reply_template": "Shared on {date}."}
+    )
     assert "2026-11-03" in w.replies.draft_shared(request_id).body
 
 

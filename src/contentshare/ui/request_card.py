@@ -7,10 +7,12 @@ paths have that name, all of them are listed and the person chooses which one to
 
 from __future__ import annotations
 
+import contextlib
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
+from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -555,16 +557,27 @@ class RequestCard(QFrame):
                     lines += [t for t in found if t not in lines]
         return lines
 
+    def _start_folder(self) -> str:
+        """Where the Browse windows open: the department's first storage folder."""
+        config = self.ctx.controller.config
+        dept = next((d for d in config.departments if d.name == self.view.department), None)
+        roots = config.roots_for(dept)
+        return roots[0] if roots else ""
+
     def _add_folder(self) -> None:
-        ask = AddFolderDialog(self._unsearched_lines(), self)
+        ask = AddFolderDialog(self._unsearched_lines(), self, start_folder=self._start_folder())
         if not ask.exec():
             return
         controller = self.ctx.controller
+        name = Path(ask.picked).name or ask.picked if ask.picked else ask.value()
         try:
-            request_id = controller.add_folder(self.group.email_id, ask.value())
+            request_id = controller.add_folder(self.group.email_id, name)
             view = controller.view(request_id)
         except Exception as exc:
             self.ctx.fail(self, "Cannot add this folder", exc)
+            return
+        if ask.picked:  # browsed: no search is needed
+            self._choose_added(view, ask.picked)
             return
         dialog = CandidateDialog(controller, view, self, start_text=ask.value())
         if dialog.exec():
@@ -578,6 +591,23 @@ class RequestCard(QFrame):
             controller.discard_added_folder(request_id)  # nothing chosen: no empty line is left
         except Exception as exc:
             self.ctx.fail(self, "Cannot add this folder", exc)
+
+    def _choose_added(self, view: RequestView, path: str) -> None:
+        """Use a browsed folder or file for the line just added; if it cannot be used, the empty
+        line is taken away again."""
+        controller = self.ctx.controller
+        self._busy(True)
+
+        def failed(exc: Exception) -> None:
+            with contextlib.suppress(Exception):
+                controller.discard_added_folder(view.id)
+            self._on_error("Cannot use that")(exc)
+
+        self.ctx.bridge.work(
+            lambda: controller.choose_path(view.id, path),
+            on_done=lambda _r: self.ctx.say(f"Request #{view.id}: folder added"),
+            on_error=failed,
+        )
 
     # ------------------------------------------------------------------ actions on one folder
     def _search_manually(self, view: RequestView) -> None:

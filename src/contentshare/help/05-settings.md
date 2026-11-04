@@ -57,9 +57,10 @@ kept once. Press **Save settings** to keep your changes, then refresh the index 
 
 ### Reply text placeholders
 
-Write `{requester_name}`, `{program}`, `{destination_path}`, `{file_count}`, `{total_size}` and
-`{date}` where you want those details filled in. Any other name in braces is refused when you
-save.
+Write `{requester_name}`, `{folders}` (the copied folders, one per line), `{file_text}` ("3 files"),
+`{total_size}`, `{program}`, `{file_count}` and `{date}` where you want those details filled in. Any other
+name in braces is refused when you save. `{destination_path}` is still accepted in older texts, but it now
+shows the folder names, never a path: the network location is not put in a reply.
 
 ### Updates
 

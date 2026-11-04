@@ -370,3 +370,29 @@ def test_the_card_sends_one_reply_for_the_email(
     )
     assert len(rig.world.gmail.sent) == 1
     assert "2 folders" in seen[0].summary
+
+
+def test_the_reply_lists_each_folder_on_its_own_line_with_no_path(h: Harness) -> None:
+    email_id, _first, _second = _verify_two(h)
+    draft = h.ctl.reply_draft_for_email(email_id)
+    lines = draft.body.splitlines()
+    assert f"  - {EXACT}" in lines and f"  - {SECOND}" in lines  # one folder per line
+    assert str(h.world.media) not in draft.body and str(h.world.storage) not in draft.body
+    assert chr(92) not in draft.body  # no network path
+
+
+def test_a_folder_added_by_hand_is_named_in_the_reply_too(h: Harness) -> None:
+    email_id, _first, _second = _verify_two(h)
+    (h.world.storage / "Weekly" / "Bonus Talk").mkdir(parents=True)
+    (h.world.storage / "Weekly" / "Bonus Talk" / "a.mp4").write_bytes(b"x")
+    h.world.index.scan_all([str(h.world.storage)])
+    added = h.ctl.add_folder(email_id, "Bonus")
+    (hit,) = [c for c in h.ctl.search(added, "Bonus Talk") if c.item_id is not None][:1]
+    h.ctl.choose(added, hit.item_id)  # type: ignore[arg-type]
+    h.ctl.approve(added, confirmed=True)
+    h.wait_copy(added)
+    draft = h.ctl.reply_draft_for_email(email_id)
+    lines = draft.body.splitlines()
+    assert [f"  - {EXACT}", f"  - {SECOND}", "  - Bonus Talk"] == [
+        x for x in lines if x.startswith("  - ")
+    ]

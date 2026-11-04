@@ -13,6 +13,7 @@ from contentshare.config.templates import (
     DEFAULT_REPLY_TEMPLATE,
     REPLY_PLACEHOLDERS,
     SUBFOLDER_PLACEHOLDERS,
+    current_reply_template,
     validate_template,
 )
 from contentshare.security.paths import PathSafetyError, ensure_absolute_windows_path
@@ -150,6 +151,7 @@ class Department(BaseModel):
     def _reply(cls, value: str | None) -> str | None:
         if value is not None:
             validate_template(value, REPLY_PLACEHOLDERS)
+            return current_reply_template(value)
         return value
 
     @model_validator(mode="after")
@@ -367,7 +369,7 @@ class AppConfig(BaseModel):
     @classmethod
     def _tmpl(cls, value: str) -> str:
         validate_template(value, REPLY_PLACEHOLDERS)
-        return value
+        return current_reply_template(value)
 
     @model_validator(mode="after")
     def _unique(self) -> AppConfig:

@@ -87,8 +87,9 @@ says "not found", so a folder made this morning is found.
   top of the card: **These lines of the email were not searched**. Read it, and compare with the
   email if something looks missing. Greetings, thanks and the "On … wrote" line of a quoted reply
   are not listed.
-* To add one of those lines, or any other folder, to the same request, press **Add a folder…** on
-  the card. Click a listed line or type the name, then choose the folder on the server. It becomes
+* To add any folder to the same request, press **Add a folder…** on the card. This needs no
+  unsearched text. **Browse for a folder…** (or **a file…**) and pick it yourself, or type a name
+  (or click one of the unsearched lines it lists) and choose the match on the server. It becomes
   one more numbered section of the same card, and the same single reply covers it. The button is
   on every card, also for a request that was already copied: the new folder is copied and
   checked on its own.
@@ -132,8 +133,25 @@ After **✓✓ Verified**, press **Preview and send reply…**. It shows the mes
 before sending. If **Send the reply automatically** was ticked on the card, the reply is sent for
 you as soon as the copy is verified.
 
-One email gets **one reply**, naming every folder that was copied and checked. It goes only to the
-person who asked, in their thread.
+One email gets **one reply**, naming every folder that was copied and checked, **each on its own
+line**. A folder you added with **Add a folder…** is named too. It goes only to the person who
+asked, in their thread. For example:
+
+```
+Hello Anita,
+
+The content you requested has been shared and checked:
+
+  - Amber Step 4 English 31-oct-2026
+  - Amber 7 Days Hindi 02-nov-2026
+
+Total: 12 files, 3.2 GB.
+
+Please let me know if anything is missing.
+```
+
+The reply **never contains the destination folder or any network address**, only the folder
+names. You can edit the text before it is sent.
 
 ## 7. History
 

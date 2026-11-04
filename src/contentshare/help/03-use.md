@@ -40,7 +40,7 @@ names back. If an update is found while it is folded, it opens so you can see th
 
 A department set to **exact folder names** (Settings → Departments) shows each folder name from the email that was found on the storage server as **Ready**. A name with several folders of that name, or no folder at all, is **Needs review**, and you can browse for the folder yourself.
 
-Lines of the email that no request was made from are listed on the card under **These lines of the email were not searched**, so compare it with the email if something seems missing. To search for one of them (or any other folder) in the same request, press **Add a folder…** on the card: click one of the listed lines or type a name, then choose the folder on the server. It becomes one more section of the same request and the same reply. The button is on every card, also for a request that was already copied: the new folder is copied and checked on its own. **Show text** on the card shows the start of the email.
+Lines of the email that no request was made from are listed on the card under **These lines of the email were not searched**, so compare it with the email if something seems missing. To add any folder to the same request, press **Add a folder…** on the card (there does not have to be any unsearched text): **Browse for a folder…** or **a file…** and pick it yourself, or type a name (or click one of the listed lines) and choose the match on the server. It becomes one more section of the same request and the same reply. The button is on every card, also for a request that was already copied: the new folder is copied and checked on its own. **Show text** on the card shows the start of the email.
 
 If a program is not found, press **Search manually…** and type part of its name, or press **Browse for a folder…** / **Browse for a file…** and pick it yourself on the storage server. What you pick must be inside one of the storage folders in *Settings* (it does not have to be in the index), unless the department has **Allow choosing from anywhere** switched on, in which case it can be anywhere. If a whole program is missing from every search result, refresh the index in *Settings → Index*.
 
@@ -66,6 +66,10 @@ After **✓✓ Verified** the reply is ready. **Send reply…** shows the messag
 it first. If **Send the reply automatically** was ticked on the card, it is sent as soon as the
 copy is verified. Replies go only to the person who asked, in their own email thread. In
 dry-run mode nothing is sent.
+
+The reply names every folder that was copied and checked, each on its own line (a folder added with
+**Add a folder…** is named too), and the total number of files and size. It never contains the
+destination folder or a network address.
 
 ## History
 

@@ -1177,3 +1177,46 @@ def test_the_card_offers_add_a_folder_and_lists_the_unsearched_lines(
     card._add_folder()
     assert shown["lines"] and shown["searched"] == shown["lines"][0]
     assert len(rig.controller.views()) == before  # not chosen: no empty line is left behind
+
+
+def test_any_folder_can_be_browsed_and_added_even_with_no_unsearched_text(
+    rig: Rig, qtbot: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from PySide6.QtWidgets import QDialog
+
+    from contentshare.ui.dialogs import AddFolderDialog
+
+    first, other = "Amber Step 4 English 31-oct-2026", "Some Other Talk"
+    for name in (first, other):
+        (rig.world.storage / "Weekly" / name).mkdir(parents=True)
+        (rig.world.storage / "Weekly" / name / "a.mp4").write_bytes(b"x")
+    rig.world.index.scan_all([str(rig.world.storage)])
+    rig.mail(message_id="x46", subject="Content request", body=first)  # nothing left unsearched
+    (card,) = rig.cards()
+    assert card._unsearched_lines() == []
+    before = len(rig.controller.views())
+
+    def ask(self: AddFolderDialog) -> QDialog.DialogCode:
+        assert self.lines is None  # no list of unsearched lines, but Browse is there
+        assert self.browse_folder.isVisibleTo(self) and self.browse_file.isVisibleTo(self)
+        self.picked = str(rig.world.storage / "Weekly" / other)  # what Browse would give
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(AddFolderDialog, "exec", ask)
+    card._add_folder()
+    qtbot.waitUntil(lambda: len(rig.controller.views()) == before + 1)
+    added = max(rig.controller.views(), key=lambda v: v.id)
+    qtbot.waitUntil(lambda: rig.controller.view(added.id).state == "READY")
+    assert (rig.controller.view(added.id).source_path or "").endswith(other)
+
+    def outside(self: AddFolderDialog) -> QDialog.DialogCode:
+        self.picked = str(rig.world.media.parent / "nowhere-at-all")  # not a folder that exists
+        return QDialog.DialogCode.Accepted
+
+    monkeypatch.setattr(AddFolderDialog, "exec", outside)
+    monkeypatch.setattr(rig.window, "say", lambda *_a: None, raising=False)
+    shown: list[str] = []
+    monkeypatch.setattr(card.ctx, "fail", lambda _w, _t, exc: shown.append(str(exc)))
+    count = len(rig.controller.views())
+    card._add_folder()
+    qtbot.waitUntil(lambda: len(rig.controller.views()) == count)  # the empty line was taken away

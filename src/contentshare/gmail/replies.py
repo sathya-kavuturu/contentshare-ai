@@ -51,6 +51,26 @@ DEFAULT_REJECTION = (
 )
 
 
+def _folder_name(row: dict[str, Any]) -> str:
+    """The name of the folder (or file) that was copied, as it is on the storage server. For a
+    line that was added by hand this is the folder that was chosen. No path: the network
+    location is private."""
+    name = Path(str(row.get("source_path") or "")).name
+    if name:
+        return name
+    detail = json.loads(row.get("query_json") or "{}").get("item", {})
+    return str(detail.get("program") or "").strip() or "the content"
+
+
+def _folder_lines(names: list[str]) -> str:
+    """One folder per line, the same name only once."""
+    return "\n".join(f"  - {name}" for name in dict.fromkeys(names))
+
+
+def _files(count: int) -> str:
+    return f"{count} file" if count == 1 else f"{count} files"
+
+
 class ReplyError(Exception):
     """A reply cannot be sent (wrong state, wrong recipient, empty text, ...)."""
 
@@ -143,11 +163,14 @@ class ReplyService:
         if len(rows) == 1:
             return values
         names = dict.fromkeys(self._values(r)["program"] for r in rows)
-        places = [str(r.get("destination_path") or "") for r in rows]
+        folders = _folder_lines([_folder_name(r) for r in rows])
+        count = sum(int(r.get("file_count") or 0) for r in rows)
         values.update(
             program=", ".join(names),
-            destination_path="\n" + "\n".join(f"  - {place}" for place in places),
-            file_count=str(sum(int(r.get("file_count") or 0) for r in rows)),
+            folders=folders,
+            destination_path=folders,  # kept for older templates: never a path
+            file_count=str(count),
+            file_text=_files(count),
             total_size=format_bytes(sum(int(r.get("total_bytes") or 0) for r in rows)),
         )
         return values
@@ -186,8 +209,10 @@ class ReplyService:
         return {
             "requester_name": sanitize_display_name(str(row.get("sender_name") or "")) or "there",
             "program": str(detail.get("program") or "").strip() or Path(source).name,
-            "destination_path": str(row.get("destination_path") or ""),
+            "folders": _folder_lines([_folder_name(row)]),
+            "destination_path": _folder_lines([_folder_name(row)]),  # never a path
             "file_count": str(row.get("file_count") or 0),
+            "file_text": _files(int(row.get("file_count") or 0)),
             "total_size": format_bytes(row.get("total_bytes") or 0),
             "date": str(dates[0][0]) if dates else self._today().isoformat(),
         }
