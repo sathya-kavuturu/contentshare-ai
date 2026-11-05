@@ -234,6 +234,28 @@ class Repository:
             )
             return email_id
 
+    def ignored_emails(self, limit: int = 200) -> list[dict[str, Any]]:
+        """Mail that was looked at and left alone, newest first, with the reason."""
+        with self.db.read() as conn:
+            return [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT id, sender_email, sender_name, subject, received_at, ignored_reason "
+                    "FROM emails WHERE ignored_reason IS NOT NULL ORDER BY id DESC LIMIT ?",
+                    (limit,),
+                )
+            ]
+
+    def forget_ignored_email(self, email_id: int) -> bool:
+        """Forget that a left-alone mail was seen, so the next check reads it again."""
+        with self.db.transaction() as conn:
+            done = conn.execute(
+                "DELETE FROM emails WHERE id = ? AND ignored_reason IS NOT NULL", (email_id,)
+            ).rowcount
+            if done:
+                self._audit(conn, "user", "email_read_again", None, {"email_id": email_id})
+        return bool(done)
+
     def get_email(self, email_id: int) -> dict[str, Any] | None:
         with self.db.read() as conn:
             return _row(conn.execute("SELECT * FROM emails WHERE id = ?", (email_id,)).fetchone())

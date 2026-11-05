@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from contentshare.app.controller import ActionError, Event, RequestView
 from contentshare.ui.context import UiContext
+from contentshare.ui.skipped_mail import SkippedMailDialog
 from contentshare.ui.status import STATUS, style_for
 from contentshare.ui.theme import current_theme
 from contentshare.ui.timefmt import local_stamp
@@ -99,6 +100,10 @@ class HistoryPage(QWidget):
         self.restore_button.setEnabled(False)
         self.restore_button.clicked.connect(self.restore)
         head.addWidget(self.restore_button)
+        skipped = QPushButton("Skipped mail…")
+        skipped.setToolTip("Mail that was looked at and not made into a request, and why")
+        skipped.clicked.connect(self.show_skipped)
+        head.addWidget(skipped)
         root.addLayout(head)
 
         split = QSplitter(Qt.Orientation.Vertical)
@@ -205,6 +210,9 @@ class HistoryPage(QWidget):
             )
         parts += ["", "Audit trail", audit_text(c.audit(request_id))]
         self.detail.setPlainText("\n".join(parts))
+
+    def show_skipped(self) -> None:
+        SkippedMailDialog(self.ctx.controller, self).exec()
 
     def restore(self) -> None:
         request_id = self._selected_id()

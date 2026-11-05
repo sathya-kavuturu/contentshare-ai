@@ -694,3 +694,14 @@ def test_unlisted_mail_can_be_switched_off_while_departments_keep_the_model(
     ).check_now()
     assert reader.calls == 1  # only the department's mail
     assert all(r["department"] is not None for r in world.repo.list_requests())
+
+
+def test_skipped_mail_is_listed_and_can_be_read_again(world: MailWorld) -> None:
+    stranger(world, "Please share the recording of last week's session")
+    assert world.intake.check_now().ignored == 1
+    (row,) = world.repo.ignored_emails()
+    assert "not in any department" in row["ignored_reason"]
+    assert world.intake.check_now().examined == 0  # remembered: not fetched again
+    assert world.repo.forget_ignored_email(row["id"])
+    assert not world.repo.forget_ignored_email(row["id"])  # already forgotten
+    assert world.intake.check_now().examined == 1  # read again at the next check

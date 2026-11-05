@@ -807,6 +807,17 @@ class Controller:
         )
         self._emit("changed", request_id)
 
+    def ignored_mail(self) -> list[dict[str, Any]]:
+        """Mail the program looked at and left alone, with why (for the History)."""
+        return self.repo.ignored_emails()
+
+    def read_mail_again(self, email_ids: list[int]) -> int:
+        """Forget that these left-alone mails were seen: the next check reads them again."""
+        count = sum(1 for i in email_ids if self.repo.forget_ignored_email(i))
+        if count:
+            self._emit("changed", None)
+        return count
+
     def reject(self, request_id: int, reason: str = "") -> None:
         self._transition(request_id, S.REJECTED, reason=reason.strip()[:200] or "rejected")
         self._learn_dismissed(int(self._row(request_id)["email_id"]))

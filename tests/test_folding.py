@@ -272,3 +272,24 @@ def test_the_menu_icon_turns_with_the_menu(rig: Rig) -> None:  # noqa: F811
     assert window.top_toggle._shape == 1.0  # open: an arrow
     window.set_sidebar_collapsed(True)
     assert window.top_toggle._shape == 0.0  # folded: three bars
+
+
+def test_the_skipped_mail_box_lists_mail_and_reads_it_again(rig: Rig, qtbot: Any) -> None:  # noqa: F811
+    from contentshare.ui.skipped_mail import SkippedMailDialog
+
+    repo = rig.controller.repo
+    repo.add_email(
+        gmail_message_id="m1",
+        gmail_thread_id="t1",
+        sender_email="x@y.org",
+        received_at="2026-11-05T10:00:00+00:00",
+        auth_status="unknown",
+        subject="Hello",
+        ignored_reason="not recognised as a content request",
+    )
+    box = SkippedMailDialog(rig.controller)
+    qtbot.addWidget(box)
+    assert box.table.rowCount() == 1 and box.table.item(0, 3).text().startswith("not recognised")
+    box.table.selectRow(0)
+    box.read_again()
+    assert box.table.rowCount() == 0 and not repo.is_processed("m1")
