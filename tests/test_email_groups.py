@@ -178,7 +178,10 @@ def test_the_card_approves_the_ready_folders_together(rig: Rig, qtbot: Any) -> N
     card.confirm.setChecked(True)
     approve.click()
     qtbot.waitUntil(
-        lambda: all(v.state == "VERIFIED" for v in rig.controller.views()), timeout=30000
+        lambda: (
+            all(v.state == "VERIFIED" for v in rig.controller.views()) and not rig.controller.busy()
+        ),
+        timeout=30000,
     )
     rig.window.requests.refresh()
     assert rig.window.requests._cards[0].status.text() == "✔✔ 2 of 2 verified"
@@ -344,7 +347,10 @@ def test_the_card_sends_one_reply_for_the_email(
     card.confirm.setChecked(True)
     _buttons(card, "Approve and copy")[0].click()
     qtbot.waitUntil(
-        lambda: all(v.state == "VERIFIED" for v in rig.controller.views()), timeout=30000
+        lambda: (
+            all(v.state == "VERIFIED" for v in rig.controller.views()) and not rig.controller.busy()
+        ),
+        timeout=30000,
     )
     rig.window.requests.refresh()
     (card,) = rig.window.requests._cards

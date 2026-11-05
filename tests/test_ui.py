@@ -216,7 +216,10 @@ def test_confirm_then_approve_copies_and_updates_the_screen(
     card = rig.cards()[0]
     card.confirm.setChecked(True)
     rig.click(card, "Approve and copy")
-    qtbot.waitUntil(lambda: rig.controller.views()[0].state == "VERIFIED", timeout=20000)
+    qtbot.waitUntil(
+        lambda: rig.controller.views()[0].state == "VERIFIED" and not rig.controller.busy(),
+        timeout=20000,
+    )
     qtbot.waitUntil(lambda: any("✔✔" in c.status.text() for c in rig.cards()), timeout=5000)
     card = rig.cards()[0]
     assert "Preview and send reply…" in [b.text() for b in card.findChildren(QPushButton)]
@@ -312,7 +315,10 @@ def test_bulk_approve_copies_only_verified_selected_ready_requests(
     page.select_all.setChecked(True)
     page.bulk_approve.click()
     assert "Copy 1 request" in boxes.shown[-1][2]
-    qtbot.waitUntil(lambda: rig.controller.views()[0].state == "VERIFIED", timeout=20000)
+    qtbot.waitUntil(
+        lambda: rig.controller.views()[0].state == "VERIFIED" and not rig.controller.busy(),
+        timeout=20000,
+    )
 
 
 def test_bulk_approve_refuses_when_nothing_qualifies(rig: Rig, boxes: Boxes) -> None:
@@ -361,7 +367,10 @@ def test_reply_preview_edit_and_send(rig: Rig, monkeypatch: pytest.MonkeyPatch, 
     rig.ready_mail()
     rid = rig.controller.views()[0].id
     rig.controller.approve(rid, confirmed=True)
-    qtbot.waitUntil(lambda: rig.controller.views()[0].state == "VERIFIED", timeout=20000)
+    qtbot.waitUntil(
+        lambda: rig.controller.views()[0].state == "VERIFIED" and not rig.controller.busy(),
+        timeout=20000,
+    )
     rig.window.requests.refresh()
 
     seen: dict[str, Any] = {}
