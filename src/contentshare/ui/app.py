@@ -42,7 +42,7 @@ from contentshare.ui.wizard import FirstRunWizard
 
 log = logging.getLogger("contentshare")
 
-APP_USER_MODEL_ID = "ContentShare.App"  # the installer's Start-menu shortcut carries the same id
+APP_USER_MODEL_ID = "ContentShareAI.App"  # the installer's Start-menu shortcut carries the same id
 
 
 def _say(text: str) -> None:

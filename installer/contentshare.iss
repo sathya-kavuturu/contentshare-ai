@@ -3,7 +3,7 @@
 ; Result: dist\ContentShare-Setup-<version>.exe
 ;
 ; Installs for the current user only (no administrator rights, no UAC prompt).
-; User data in %APPDATA%\ContentShare (settings, database, logs) is never touched.
+; User data in %APPDATA%\ContentShareAI (settings, database, logs) is never touched.
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -11,12 +11,12 @@
 
 [Setup]
 ; Never change this id: Windows uses it to recognise upgrades of the same program.
-AppId={{10E506B8-3BD4-4355-BB0D-EE143AE7E6AF}
-AppName=ContentShare
+AppId={{9361359C-B4A3-4B94-ABAC-E96EBC88A6C7}
+AppName=ContentShare AI
 AppVersion={#AppVersion}
-AppVerName=ContentShare {#AppVersion}
-DefaultDirName={autopf}\ContentShare
-DefaultGroupName=ContentShare
+AppVerName=ContentShare AI {#AppVersion}
+DefaultDirName={autopf}\ContentShareAI
+DefaultGroupName=ContentShare AI
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=..\dist
@@ -44,7 +44,7 @@ Name: "desktopicon"; Description: "Create a &desktop shortcut"; Flags: unchecked
 [InstallDelete]
 ; An upgrade installs over the old version, which would leave files the new one no longer has
 ; (for example help pages that were renamed, shown as a second copy of the topic). Only program
-; files are listed here; user data is in %APPDATA%\ContentShare.
+; files are listed here; user data is in %APPDATA%\ContentShareAI.
 Type: filesandordirs; Name: "{app}\_internal"
 
 [Files]
@@ -53,12 +53,12 @@ Source: "..\dist\ContentShare\*"; DestDir: "{app}"; Flags: recursesubdirs create
 [Icons]
 ; The AppUserModelID is the same id the program sets for itself, so pop-up notifications and
 ; the taskbar belong to one "ContentShare".
-Name: "{autoprograms}\ContentShare"; Filename: "{app}\ContentShare.exe"; AppUserModelID: "ContentShare.App"
-Name: "{autoprograms}\ContentShare user guide"; Filename: "{app}\USER_GUIDE.html"
-Name: "{autodesktop}\ContentShare"; Filename: "{app}\ContentShare.exe"; Tasks: desktopicon; AppUserModelID: "ContentShare.App"
+Name: "{autoprograms}\ContentShare AI"; Filename: "{app}\ContentShare.exe"; AppUserModelID: "ContentShareAI.App"
+Name: "{autoprograms}\ContentShare AI user guide"; Filename: "{app}\USER_GUIDE.html"
+Name: "{autodesktop}\ContentShare AI"; Filename: "{app}\ContentShare.exe"; Tasks: desktopicon; AppUserModelID: "ContentShareAI.App"
 
 [Run]
-Filename: "{app}\ContentShare.exe"; Description: "Start ContentShare"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\ContentShare.exe"; Description: "Start ContentShare AI"; Flags: nowait postinstall skipifsilent
 
 [Code]
 // Ask a running ContentShare to quit (it asks the user first if copies are running).
@@ -95,10 +95,10 @@ begin
   end;
   if CurUninstallStep = usPostUninstall then
   begin
-    MsgBox('ContentShare was removed.' + #13#10 + #13#10 +
-      'Your settings and request history were kept in your AppData\ContentShare folder.' + #13#10 +
+    MsgBox('ContentShare AI was removed.' + #13#10 + #13#10 +
+      'Your settings and request history were kept in your AppData\ContentShareAI folder.' + #13#10 +
       'If you had connected Gmail, open Google Account > Security > Third-party access ' +
-      'and remove ContentShare there as well (or use Settings > Gmail > Disconnect ' +
+      'and remove ContentShare AI there as well (or use Settings > Gmail > Disconnect ' +
       'before uninstalling).', mbInformation, MB_OK);
   end;
 end;

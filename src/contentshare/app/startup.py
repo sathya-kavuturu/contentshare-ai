@@ -25,8 +25,8 @@ from typing import Protocol
 log = logging.getLogger(__name__)
 
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-VALUE_NAME = "ContentShare"
-TASK_NAME = "ContentShare (at log on)"
+VALUE_NAME = "ContentShareAI"
+TASK_NAME = "ContentShareAI (at log on)"
 BACKGROUND_FLAG = "--background"
 
 

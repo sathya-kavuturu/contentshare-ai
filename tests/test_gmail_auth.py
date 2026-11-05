@@ -141,11 +141,11 @@ def test_save_replaces_and_clear_removes_everything(vault: MemoryKeyring) -> Non
 def test_damaged_vault_entries_read_as_not_connected(vault: MemoryKeyring) -> None:
     store = KeyringTokenStore()
     store.save(token_data())
-    vault.data[("ContentShare", "gmail-oauth.0")] = "{not json"
+    vault.data[("ContentShareAI", "gmail-oauth.0")] = "{not json"
     assert store.load() is None
-    vault.data.pop(("ContentShare", "gmail-oauth.0"))
+    vault.data.pop(("ContentShareAI", "gmail-oauth.0"))
     assert store.load() is None
-    vault.data[("ContentShare", "gmail-oauth.count")] = "abc"
+    vault.data[("ContentShareAI", "gmail-oauth.count")] = "abc"
     assert store.load() is None
 
 

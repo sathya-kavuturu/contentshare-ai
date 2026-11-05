@@ -34,7 +34,7 @@ def test_queries_only_ask_for_configured_senders(w: MailWorld) -> None:
     for sender in ("anita@dept.org", "editor@dept.org", "finance.org"):
         assert sender in query
     assert "newer_than:30d" in query
-    assert "-label:contentshare-processed" in query
+    assert "-label:contentshareai-processed" in query
 
 
 def test_queries_are_split_for_many_senders() -> None:
@@ -102,7 +102,7 @@ def test_processed_label_is_added_and_excluded_next_time(w: MailWorld) -> None:
     w.gmail.add(make_message(message_id="a", subject=EXACT))
     w.intake.check_now()
     assert "Label_1" in w.gmail.label_ids_of("a")
-    assert w.gmail.labels["Label_1"] == "ContentShare/Processed"
+    assert w.gmail.labels["Label_1"] == "ContentShareAI/Processed"
     w.intake.check_now()
     # the second search no longer even lists the labelled message
     assert w.gateway.list_message_ids(w.gmail.queries[-1], 10) == []

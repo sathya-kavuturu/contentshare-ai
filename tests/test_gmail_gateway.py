@@ -73,19 +73,19 @@ def test_thread_headers_returns_only_requested_headers(
 
 # ------------------------------------------------------------------ labels
 def test_label_is_created_once_then_reused(gateway: GmailGateway, gmail: FakeGmail) -> None:
-    first = gateway.ensure_label("ContentShare/Processed")
-    assert gateway.ensure_label("ContentShare/Processed") == first
+    first = gateway.ensure_label("ContentShareAI/Processed")
+    assert gateway.ensure_label("ContentShareAI/Processed") == first
     assert gmail.calls.count("labels.create") == 1
     assert gmail.calls.count("labels.list") == 1  # second call came from the cache
     other = GmailGateway(gmail)  # a new run finds the existing label instead of making another
-    assert other.ensure_label("ContentShare/Processed") == first
+    assert other.ensure_label("ContentShareAI/Processed") == first
     assert gmail.calls.count("labels.create") == 1
 
 
 def test_label_creation_race_is_survived(gateway: GmailGateway, gmail: FakeGmail) -> None:
-    gmail.labels["Label_9"] = "ContentShare/Processed"
+    gmail.labels["Label_9"] = "ContentShareAI/Processed"
     gmail.fail("labels.list", http_error(503))  # first lookup fails once, then the label exists
-    assert gateway.ensure_label("ContentShare/Processed") == "Label_9"
+    assert gateway.ensure_label("ContentShareAI/Processed") == "Label_9"
 
 
 def test_add_label(gateway: GmailGateway, gmail: FakeGmail) -> None:

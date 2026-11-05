@@ -315,7 +315,7 @@ class GmailSettings(BaseModel):
     # Applying a label needs the broader gmail.modify permission. Turn this off to stay on
     # read + send only; the app's own database still prevents processing an email twice.
     apply_label: bool = True
-    processed_label: str = "ContentShare/Processed"
+    processed_label: str = "ContentShareAI/Processed"
     # Accept a request as verified only when the mail provider reports the sender passed
     # DMARC (or SPF and DKIM). Only results added by these servers are believed.
     require_authentication: bool = True

@@ -53,7 +53,7 @@ class TokenStore(Protocol):
 class KeyringTokenStore:
     """Token in Windows Credential Manager, split into chunks to stay under its size limit."""
 
-    def __init__(self, service: str = "ContentShare", name: str = "gmail-oauth") -> None:
+    def __init__(self, service: str = "ContentShareAI", name: str = "gmail-oauth") -> None:
         self.service, self.name = service, name
 
     def _get(self, key: str) -> str | None:

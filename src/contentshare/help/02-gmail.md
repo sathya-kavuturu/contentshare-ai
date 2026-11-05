@@ -57,7 +57,7 @@ never in a file.
 
 | Permission | Used for |
 |---|---|
-| `gmail.modify` | Reading request emails, and adding the **ContentShare/Processed** label. It cannot delete mail permanently, and ContentShare only ever adds its own label. |
+| `gmail.modify` | Reading request emails, and adding the **ContentShareAI/Processed** label. It cannot delete mail permanently, and ContentShare only ever adds its own label. |
 | `gmail.send` | Sending the "content shared" reply in the same thread. |
 | `gmail.readonly` | Used instead of `gmail.modify` if you turn **Label processed emails** off. |
 

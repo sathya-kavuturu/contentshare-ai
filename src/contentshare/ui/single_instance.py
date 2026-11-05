@@ -25,7 +25,7 @@ QUIT_SUFFIX = "-quit"
 
 def pipe_name() -> str:
     user = re.sub(r"[^A-Za-z0-9_-]", "_", getpass.getuser())
-    return f"ContentShare-{user}"
+    return f"ContentShareAI-{user}"
 
 
 class SingleInstance(QObject):

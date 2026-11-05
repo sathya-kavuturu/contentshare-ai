@@ -81,7 +81,7 @@ at <https://myaccount.google.com/permissions>.
 | Permission | Needed for | Used when |
 |---|---|---|
 | `gmail.readonly` | Reading request emails | Only if you turn **labels off** (`gmail.apply_label: false`) |
-| `gmail.modify` | Reading, and adding the `ContentShare/Processed` label | Default (labels on). It also allows other changes to mail (but not permanent deletion); ContentShare only ever adds its own label |
+| `gmail.modify` | Reading, and adding the `ContentShareAI/Processed` label | Default (labels on). It also allows other changes to mail (but not permanent deletion); ContentShare only ever adds its own label |
 | `gmail.send` | Sending the "content shared" reply | Always |
 
 ContentShare asks for **`gmail.modify` + `gmail.send`** by default, or **`gmail.readonly` +

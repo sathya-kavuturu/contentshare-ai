@@ -1208,6 +1208,8 @@ def test_any_folder_can_be_browsed_and_added_even_with_no_unsearched_text(
     added = max(rig.controller.views(), key=lambda v: v.id)
     qtbot.waitUntil(lambda: rig.controller.view(added.id).state == "READY")
     assert (rig.controller.view(added.id).source_path or "").endswith(other)
+    qtbot.wait(300)  # the list is rebuilt after a change: take the new card, not the old one
+    card = rig.cards()[0]
 
     def outside(self: AddFolderDialog) -> QDialog.DialogCode:
         self.picked = str(rig.world.media.parent / "nowhere-at-all")  # not a folder that exists

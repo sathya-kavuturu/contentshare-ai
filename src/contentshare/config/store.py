@@ -22,7 +22,7 @@ def data_dir() -> Path:
     base = (
         Path(override)
         if override
-        else Path(os.environ.get("APPDATA", Path.home())) / "ContentShare"
+        else Path(os.environ.get("APPDATA", Path.home())) / "ContentShareAI"
     )
     base.mkdir(parents=True, exist_ok=True)
     return base

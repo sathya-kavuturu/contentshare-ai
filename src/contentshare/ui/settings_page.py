@@ -468,7 +468,7 @@ class SettingsPage(QWidget):
         buttons.addWidget(self.disconnect_button)
         form.addRow("Status", buttons)
         self.label = QCheckBox(
-            "Label processed emails “ContentShare/Processed” (needs gmail.modify)"
+            "Label processed emails “ContentShareAI/Processed” (needs gmail.modify)"
         )
         self.require_auth = QCheckBox("Treat a sender as verified only if Gmail confirms it")
         self.lookback = QSpinBox()

@@ -75,7 +75,7 @@ class SecretStore(Protocol):
 class KeyringSecret:
     """The bot token in Windows Credential Manager."""
 
-    def __init__(self, service: str = "ContentShare", name: str = "telegram-bot-token") -> None:
+    def __init__(self, service: str = "ContentShareAI", name: str = "telegram-bot-token") -> None:
         self.service, self.name = service, name
 
     def get(self) -> str | None:

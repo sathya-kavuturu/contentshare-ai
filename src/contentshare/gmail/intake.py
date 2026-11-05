@@ -55,7 +55,7 @@ class IntakeReport:
 
 
 def label_search_name(label: str) -> str:
-    """How Gmail search spells a label: ``ContentShare/Processed`` -> ``contentshare-processed``."""
+    """A label as Gmail search spells it: ``My/Label`` becomes ``my-label``."""
     return label.lower().replace("/", "-").replace(" ", "-")
 
 

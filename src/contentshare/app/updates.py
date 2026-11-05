@@ -34,7 +34,7 @@ from urllib.parse import urlsplit
 
 log = logging.getLogger(__name__)
 
-REPO = "sathya-kavuturu/content-sharing"
+REPO = "sathya-kavuturu/contentshare-ai"
 LATEST_RELEASE_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases"
 DOWNLOAD_PREFIX = f"https://github.com/{REPO}/releases/download/"
@@ -103,7 +103,7 @@ class UrlLibHttp:
         if urlsplit(url).scheme != "https":
             raise UpdateError("Only secure (https) addresses are used for updates.")
         request = urllib.request.Request(  # noqa: S310 - https only, checked just above
-            url, headers={"User-Agent": "ContentShare-updater", "Accept": accept}
+            url, headers={"User-Agent": "ContentShareAI-updater", "Accept": accept}
         )
         return cast(IO[bytes], self._opener.open(request, timeout=TIMEOUT_SECONDS))  # nosec B310
 

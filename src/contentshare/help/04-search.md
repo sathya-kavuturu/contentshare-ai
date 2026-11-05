@@ -3,7 +3,7 @@
 ContentShare does two searches for every request: it **searches the mailbox** to find the
 request emails, then **searches the storage folders** to find the program that was asked for.
 Both only read. Nothing in Gmail is deleted or changed (apart from the optional
-**ContentShare/Processed** label), and nothing on the storage server is touched.
+**ContentShareAI/Processed** label), and nothing on the storage server is touched.
 
 ## Part 1: Searching the mailbox
 
@@ -15,7 +15,7 @@ matches **all** of these:
 * it is **from** one of the sender addresses or sender domains of your departments
   (*Settings → Departments*),
 * it arrived within the last **Look back** days (30 by default),
-* it does **not** already carry the **ContentShare/Processed** label (when labels are on),
+* it does **not** already carry the **ContentShareAI/Processed** label (when labels are on),
 
 and reads at most **Emails per check** of them (100 by default). Every other email in the
 mailbox is never opened, and a sender that is not in a department is never asked for.
