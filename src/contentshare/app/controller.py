@@ -26,7 +26,7 @@ from typing import Any
 from contentshare.app.telegram import TelegramError, TelegramNotifier, alert_text
 from contentshare.app.users import UserError, UserStore
 from contentshare.app.users import clean_name as clean_user_name
-from contentshare.config.models import AppConfig, Department
+from contentshare.config.models import AppConfig, Department, DevSettings
 from contentshare.config.store import data_dir, save_config
 from contentshare.copy_engine import (
     PreflightError,
@@ -36,6 +36,10 @@ from contentshare.copy_engine import (
     format_duration,
     preflight,
 )
+from contentshare.devtools.gateways import FakeGateway, NoSendGateway
+from contentshare.devtools.logbuffer import attach as attach_log_buffer
+from contentshare.devtools.logbuffer import detach as detach_log_buffer
+from contentshare.devtools.trace import TRACE
 from contentshare.gmail.auth import GmailAuth, required_scopes
 from contentshare.gmail.errors import AuthRequiredError, GmailError
 from contentshare.gmail.gateway import GmailGateway
@@ -362,6 +366,58 @@ class Controller:
         self.queue = CopyQueue(
             CopyJobRunner(repo, config), concurrency=config.copy_options.concurrency
         )
+        self._fake_gateway: FakeGateway | None = None
+        self.apply_dev()
+
+    # ------------------------------------------------------------------ developer mode
+    def apply_dev(self) -> None:
+        """Start or stop the developer tools to match the settings."""
+        dev = self.config.dev
+        TRACE.enabled = dev.enabled
+        if dev.enabled:
+            attach_log_buffer(dev.debug_log)
+        else:
+            detach_log_buffer()
+
+    def set_dev_option(self, name: str, value: bool) -> None:
+        """Change one developer switch at once (allowed while copies run: none of them touches
+        a copy)."""
+        if name not in DevSettings.model_fields:
+            raise ValueError(f"{name} is not a developer option")
+        dev = self.config.dev.model_copy(update={name: bool(value)})
+        config = AppConfig.model_validate({**self.config.model_dump(), "dev": dev.model_dump()})
+        save_config(config, self._config_path)
+        self.config = config
+        self.apply_dev()
+        self._emit("changed")
+
+    def _gateway(self) -> Any:
+        """The Gmail gateway to use now: the real one, the test mailbox, or the real one with
+        sending switched off (developer mode only)."""
+        dev = self.config.dev
+        if dev.enabled and dev.fake_gmail:
+            if self._fake_gateway is None:
+                first = next(
+                    (d.sender_emails[0] for d in self.config.departments if d.sender_emails), None
+                )
+                self._fake_gateway = FakeGateway(first)
+            return self._fake_gateway
+        gateway = self._gateway_factory()
+        return NoSendGateway(gateway) if dev.enabled and dev.no_replies else gateway
+
+    def dev_gateway(self) -> Any:
+        return self._gateway()
+
+    def forget_all_skipped(self) -> int:
+        """Developer mode: every mail that was looked at and left alone is read again at the
+        next check (requests already made are not touched)."""
+        count = 0
+        for row in self.repo.ignored_emails(limit=100000):
+            count += int(self.repo.forget_ignored_email(int(row["id"])))
+        if count:
+            self._fake_gateway = None  # the test mailbox starts again too
+            self._emit("changed")
+        return count
 
     # ------------------------------------------------------------------ events
     def subscribe(self, listener: Callable[[Event], None]) -> None:
@@ -520,7 +576,7 @@ class Controller:
         if email is None:
             raise ActionError("This request no longer exists")
         try:
-            msg = parse_message(self._gateway_factory().get_message(str(email["gmail_message_id"])))
+            msg = parse_message(self._gateway().get_message(str(email["gmail_message_id"])))
         except Exception as exc:  # not connected, offline, or the email was deleted
             raise ActionError(f"The email could not be read from Gmail again: {exc}") from exc
         try:
@@ -1108,7 +1164,7 @@ class Controller:
 
     # ------------------------------------------------------------------ gmail
     def _replies(self) -> ReplyService:
-        return ReplyService(self.repo, self._gateway_factory(), self.config, today=self._today)
+        return ReplyService(self.repo, self._gateway(), self.config, today=self._today)
 
     def check_now(
         self, *, refresh_index: bool = False, should_stop: Callable[[], bool] | None = None
@@ -1118,7 +1174,7 @@ class Controller:
             return IntakeReport(warnings=["A check is already running."], already_running=True)
         try:
             try:
-                gateway = self._gateway_factory()
+                gateway = self._gateway()
             except AuthRequiredError:
                 return IntakeReport(needs_sign_in=True)
             service = IntakeService(
@@ -1344,6 +1400,7 @@ class Controller:
         for root in removed:
             self.index.forget_root(root)
         self.config = config
+        self.apply_dev()
         self.index.settings = config.index
         if self._smart is not None:
             self._smart.update(config.smart)

@@ -15,6 +15,7 @@ from datetime import date
 from typing import Any, Protocol
 
 from contentshare.config.models import AppConfig, Department
+from contentshare.devtools.trace import TRACE
 from contentshare.gmail.errors import AuthRequiredError, GmailError, MessageFormatError
 from contentshare.gmail.gateway import GmailGateway
 from contentshare.gmail.message import InboundEmail, parse_message
@@ -131,15 +132,18 @@ class IntakeService:
         should_stop: Callable[[], bool] | None = None,
     ) -> IntakeReport:
         report = IntakeReport()
+        TRACE.begin_check()
         if refresh_index:
             self._refresh_index(report)
         try:
             ids = self._new_ids()
         except AuthRequiredError:
             report.needs_sign_in = True
+            TRACE.end_check("Gmail asked to sign in again")
             return report
         except GmailError as exc:
             report.errors.append(f"could not list mail: {type(exc).__name__}")
+            TRACE.end_check(f"could not list mail: {exc}")
             return report
 
         for message_id in ids:
@@ -163,6 +167,17 @@ class IntakeService:
             ready=report.ready, review=report.needs_review, ignored=report.ignored,
             errors=len(report.errors),
         )  # fmt: skip
+        extra = [f"Warning: {w}" for w in report.warnings] + [f"Error: {e}" for e in report.errors]
+        TRACE.end_check(
+            "\n".join(
+                [
+                    f"Result: {report.examined} read, {report.requests} request(s) "
+                    f"({report.ready} ready, {report.needs_review} to review), "
+                    f"{report.ignored} left alone, {len(report.errors)} error(s)",
+                    *extra,
+                ]
+            )
+        )
         return report
 
     # ------------------------------------------------------------------ steps
@@ -176,28 +191,44 @@ class IntakeService:
         if self.config.smart.read_unlisted:
             # Mail once left alone only because its sender was in no department (an earlier
             # version, or reading of such senders switched off) is looked at again now.
-            self.repo.forget_ignored_for(NOT_IN_DEPARTMENT)
-        for query in build_queries(self.config):
+            TRACE.forgotten(self.repo.forget_ignored_for(NOT_IN_DEPARTMENT))
+        queries = build_queries(self.config)
+        if not queries:
+            TRACE.note("No department has a sender, so no department search was made")
+        for query in queries:
             room = self.config.gmail.max_messages - len(seen)
             if room <= 0:
                 break
-            for message_id in self.gateway.list_message_ids(query, room):
+            found = self.gateway.list_message_ids(query, room)
+            TRACE.search(query, found)
+            for message_id in found:
                 seen.setdefault(message_id)
         room = self.config.gmail.max_messages - len(seen)
         if self.config.smart.read_unlisted and room > 0:
             unlisted = build_unlisted_query(self.config)
-            for message_id in self.gateway.list_message_ids(unlisted, room):
+            found = self.gateway.list_message_ids(unlisted, room)
+            TRACE.search(unlisted, found)
+            for message_id in found:
                 seen.setdefault(message_id)
-        return [m for m in seen if not self.repo.is_processed(m)]
+        elif not self.config.smart.read_unlisted:
+            TRACE.note("Reading mail from senders in no department is switched off (Settings)")
+        fresh = [m for m in seen if not self.repo.is_processed(m)]
+        TRACE.seen([m for m in seen if m not in fresh])
+        return fresh
 
     def _handle(self, message_id: str, report: IntakeReport) -> None:
         raw = self.gateway.get_message(message_id)
         report.examined += 1
         msg = parse_message(raw)
+        TRACE.message(msg.message_id, msg.sender_email, msg.subject, list(msg.label_ids))
 
         if "SENT" in msg.label_ids:
             return self._ignore(msg, "sent by this account", report)
         dept = self.config.department_for_sender(msg.sender_email)
+        TRACE.step(
+            msg.message_id,
+            f"Department of the sender: {dept.name if dept else 'none (not in any department)'}",
+        )
         if dept is None:
             if self.config.smart.read_unlisted:
                 return self._handle_unlisted(msg, report)
@@ -251,7 +282,7 @@ class IntakeService:
                 today=self._today(),
             )
         self._log_reading(reading, ids, msg)
-        self._count(ids, report)
+        self._count(ids, report, msg.message_id)
         self._label(msg.message_id, report)
         return None
 
@@ -292,6 +323,11 @@ class IntakeService:
         today = self._today()
         # 1. the subject and the text, looked up in the index
         found = search_found(msg.subject, msg.body, self.index, self.config, today=today)
+        TRACE.step(
+            msg.message_id,
+            "Subject and text searched in the index: "
+            + ("something on the server matches" if found else "nothing matches"),
+        )
         names: list[str] = []
         reading: Reading | None = None
         if not found:
@@ -304,9 +340,22 @@ class IntakeService:
                 )
                 return self._ignore(msg, NOT_IN_DEPARTMENT, report)
             # 2. the model reads it, and what it names is looked up in the index again
+            TRACE.step(msg.message_id, "Asking the local model")
             reading = self._read_with_model(msg, report)
             if reading is None:
+                TRACE.outcome(
+                    msg.message_id, "model could not answer now; will be looked at again next check"
+                )
                 return None  # the model could not be used now: look at it again next time
+            TRACE.step(msg.message_id, reading_summary(reading))
+            if reading.answer:
+                TRACE.step(msg.message_id, f"Model answer as sent: {reading.answer[:400]}")
+            if reading.dropped:
+                TRACE.step(
+                    msg.message_id,
+                    "Names the model gave that are not in the email (dropped): "
+                    + "; ".join(reading.dropped),
+                )
             if not reading.is_request:
                 # 3. the model reads it as no content request either
                 self._log_reading(reading, [], msg)
@@ -333,7 +382,7 @@ class IntakeService:
                 today=self._today(),
             )
         self._log_reading(reading, ids, msg)
-        self._count(ids, report)
+        self._count(ids, report, msg.message_id)
         self._label(msg.message_id, report)
         return None
 
@@ -408,6 +457,7 @@ class IntakeService:
             ignored_reason=reason,
         )
         report.ignored += 1
+        TRACE.outcome(msg.message_id, f"left alone: {reason}")
 
     def _record_unreadable(self, message_id: str, reason: str, report: IntakeReport) -> None:
         self.repo.add_email(
@@ -420,11 +470,13 @@ class IntakeService:
         )
         report.ignored += 1
 
-    def _count(self, request_ids: list[int], report: IntakeReport) -> None:
+    def _count(self, request_ids: list[int], report: IntakeReport, message_id: str = "") -> None:
         for request_id in request_ids:
             row = self.repo.get_request(request_id)
             report.requests += 1
             report.request_ids.append(request_id)
+            if row:
+                TRACE.outcome(message_id, f"request #{request_id}: {row['state']}")
             if row and row["state"] == RequestState.READY:
                 report.ready += 1
             else:

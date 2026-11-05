@@ -20,6 +20,7 @@ from typing import Any
 import httplib2
 from googleapiclient.errors import HttpError
 
+from contentshare.devtools.trace import TRACE
 from contentshare.gmail.errors import (
     AuthRequiredError,
     GmailError,
@@ -77,12 +78,23 @@ class GmailGateway:
         self._labels: dict[str, str] = {}
 
     # ------------------------------------------------------------------ plumbing
-    def _execute(self, request: Any, *, retry: bool = True) -> Any:
+    def _execute(
+        self,
+        request: Any,
+        *,
+        retry: bool = True,
+        what: str = "gmail",
+        describe: Callable[[Any], str] | None = None,
+    ) -> Any:
+        started = time.monotonic()
         attempts = self._max_attempts if retry else 1
         for attempt in range(1, attempts + 1):
             try:
-                return request.execute()
+                result = request.execute()
+                TRACE.call(what, started, True, describe(result) if describe else "")
+                return result
             except GmailError:
+                TRACE.call(what, started, False)
                 raise
             except Exception as exc:
                 mapped = map_error(exc)
@@ -91,12 +103,13 @@ class GmailGateway:
                     log.warning("Gmail busy; retrying in %ss (%s)", delay, mapped)
                     self._sleep(delay)
                     continue
+                TRACE.call(what, started, False, str(mapped))
                 raise mapped from exc
         raise AssertionError("unreachable")
 
     # ------------------------------------------------------------------ reading
     def profile_email(self) -> str:
-        data = self._execute(self._svc.users().getProfile(userId=self._user))
+        data = self._execute(self._svc.users().getProfile(userId=self._user), what="profile")
         return str(data["emailAddress"])
 
     def list_message_ids(self, query: str, limit: int) -> list[str]:
@@ -107,7 +120,11 @@ class GmailGateway:
             request = self._svc.users().messages().list(
                 userId=self._user, q=query, maxResults=min(_PAGE, limit - len(ids)), pageToken=token
             )  # fmt: skip
-            page = self._execute(request)
+            page = self._execute(
+                request,
+                what="messages.list",
+                describe=lambda p: f"{len(p.get('messages', []))} ids",
+            )
             ids.extend(str(m["id"]) for m in page.get("messages", []))
             token = page.get("nextPageToken")
             if not token:
@@ -116,14 +133,14 @@ class GmailGateway:
 
     def get_message(self, message_id: str) -> dict[str, Any]:
         request = self._svc.users().messages().get(userId=self._user, id=message_id, format="full")
-        return dict(self._execute(request))
+        return dict(self._execute(request, what="messages.get"))
 
     def thread_headers(self, thread_id: str, names: Sequence[str]) -> list[dict[str, Any]]:
         """For each message in a thread: its id, labels and the requested headers (lower-case)."""
         request = self._svc.users().threads().get(
             userId=self._user, id=thread_id, format="metadata", metadataHeaders=list(names)
         )  # fmt: skip
-        thread = self._execute(request)
+        thread = self._execute(request, what="threads.get")
         out = []
         for message in thread.get("messages", []):
             headers = {
@@ -149,7 +166,8 @@ class GmailGateway:
             }
             try:
                 created = self._execute(
-                    self._svc.users().labels().create(userId=self._user, body=body)
+                    self._svc.users().labels().create(userId=self._user, body=body),
+                    what="labels.create",
                 )
                 found = str(created["id"])
             except GmailError:
@@ -160,7 +178,7 @@ class GmailGateway:
         return found
 
     def _find_label(self, name: str) -> str | None:
-        data = self._execute(self._svc.users().labels().list(userId=self._user))
+        data = self._execute(self._svc.users().labels().list(userId=self._user), what="labels.list")
         for label in data.get("labels", []):
             if label.get("name") == name:
                 return str(label["id"])
@@ -170,7 +188,7 @@ class GmailGateway:
         request = self._svc.users().messages().modify(
             userId=self._user, id=message_id, body={"addLabelIds": [label_id]}
         )  # fmt: skip
-        self._execute(request)
+        self._execute(request, what="messages.modify")
 
     # ------------------------------------------------------------------ sending
     def send_raw(self, raw_base64url: str, thread_id: str | None) -> str:
@@ -179,6 +197,8 @@ class GmailGateway:
         if thread_id:
             body["threadId"] = thread_id
         sent = self._execute(
-            self._svc.users().messages().send(userId=self._user, body=body), retry=False
+            self._svc.users().messages().send(userId=self._user, body=body),
+            retry=False,
+            what="messages.send",
         )
         return str(sent["id"])

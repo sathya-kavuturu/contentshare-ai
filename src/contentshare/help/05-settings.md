@@ -20,6 +20,7 @@ which entry and why, and nothing is saved. Settings cannot be saved while a copy
 | **Tick "send the reply automatically" on new requests** | The default for the tick box on each card. The reply is then sent as soon as the copy is verified. Leave it off until you trust the results. |
 | **Copy and reply by itself when a request is Ready and 100% matched** | Off by default. When on, a request from a verified sender that is Ready and matched at exactly 100% is copied, verified and answered without anyone approving it (the reply is sent too). Anything below 100%, or not Ready, still waits for you. Does nothing in dry-run mode. |
 | **Dry-run mode** | Approving checks paths, free space and names and reports what would be copied, but **copies nothing and sends nothing**. A bar across the window reminds you while it is on. |
+| **Developer mode** | Adds a **Developer** screen to the menu, for finding out why something does not work. It shows the Gmail search sent at each check, what came back and what was decided about every message, the Gmail calls, the log, the index and the model, and has tools to test one email, switch off replies or use test emails. Extra records are kept in memory while it is on; sign-in tokens are never shown. A bar across the window reminds you while it is on. |
 | **Storage folders to search** | The folders on the server that hold the programs (see below). |
 | **Default reply text** | The message sent when a copy is verified. Departments can have their own. |
 | **Check for updates when ContentShare starts** | See *Updates* below. |

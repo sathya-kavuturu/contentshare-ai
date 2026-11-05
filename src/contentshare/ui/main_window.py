@@ -30,6 +30,7 @@ from contentshare.ui.automation import Automation
 from contentshare.ui.bridge import Bridge
 from contentshare.ui.context import UiContext
 from contentshare.ui.copies_page import CopiesPage
+from contentshare.ui.developer_page import DeveloperPage
 from contentshare.ui.dialogs import LoginDialog
 from contentshare.ui.help_page import HelpPage
 from contentshare.ui.history_page import HistoryPage
@@ -44,7 +45,7 @@ from contentshare.ui.widgets import MENU_MS, BurgerButton
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
-PAGES = ["Requests", "Active copies", "History", "Settings", "Help"]
+PAGES = ["Requests", "Active copies", "History", "Settings", "Help", "Developer"]
 
 SIDEBAR_WIDE, SIDEBAR_NARROW = 236, 68  # the menu on the left: full, or folded to icons
 WARM_UP_DELAY_MS = 800
@@ -102,8 +103,12 @@ class MainWindow(QMainWindow):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
         self.dry_banner = _banner("DRY-RUN MODE: approving only checks; nothing is copied or sent.")
+        self.dev_banner = _banner(
+            "DEVELOPER MODE is on: extra tracing is kept. Turn it off in Settings when done."
+        )
         self.gmail_banner = _banner("Gmail is not connected. Open Settings → Gmail to connect.")
         outer.addWidget(self.dry_banner)
+        outer.addWidget(self.dev_banner)
         outer.addWidget(self.gmail_banner)
 
         body = QHBoxLayout()
@@ -117,7 +122,10 @@ class MainWindow(QMainWindow):
         self.history = HistoryPage(self.ctx)
         self.settings = SettingsPage(self.ctx)
         self.help = HelpPage()
-        for page in (self.requests, self.copies, self.history, self.settings, self.help):
+        self.developer = DeveloperPage(self.ctx)
+        for page in (
+            self.requests, self.copies, self.history, self.settings, self.help, self.developer,
+        ):  # fmt: skip
             self.stack.addWidget(page)
         body.addWidget(self.stack, 1)
         outer.addLayout(body, 1)
@@ -419,12 +427,23 @@ class MainWindow(QMainWindow):
         if event.kind in ("changed", "copy_finished"):
             self.update_chrome()
 
+    def _show_developer(self, on: bool) -> None:
+        """The Developer screen is in the menu only while developer mode is on."""
+        row = PAGES.index("Developer")
+        item = self.nav.item(row)
+        if item is not None and item.isHidden() == on:
+            item.setHidden(not on)
+        self.dev_banner.setVisible(on)
+        if not on and self.stack.currentIndex() == row:
+            self.nav.setCurrentRow(PAGES.index("Settings"))
+
     def update_chrome(self) -> None:
         review = self.controller.attention_count()  # emails, not folders
         self.nav.item(0).setText(f"Requests ({review})" if review else "Requests")
         active = len(self.controller.queue.active())
         self.nav.item(1).setText(f"Active copies ({active})" if active else "Active copies")
         self.nav.refresh_tooltips()
+        self._show_developer(self.controller.config.dev.enabled)
         self.dry_banner.setVisible(self.controller.dry_run)
         self.gmail_banner.setVisible(not self.controller.gmail_connected())
         if self.tray is not None:

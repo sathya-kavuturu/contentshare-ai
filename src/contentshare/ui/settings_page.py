@@ -57,7 +57,14 @@ def _settings_of(config: AppConfig) -> dict[str, Any]:
     """The settings that have boxes on this screen: the window options (theme, folded menu and
     cards) are saved the moment they change and do not count."""
     return config.model_dump(
-        exclude={"appearance", "sidebar_collapsed", "compact_requests", "setup_done"}
+        exclude={
+            "appearance": True,
+            "sidebar_collapsed": True,
+            "compact_requests": True,
+            "setup_done": True,
+            # the other developer switches are saved at once on the Developer screen
+            "dev": {"debug_log", "no_replies", "fake_gmail", "include_mail_text"},
+        }
     )
 
 
@@ -427,6 +434,14 @@ class SettingsPage(QWidget):
         form.addRow("", self.auto_copy)
         form.addRow("", self.auto_default)
         form.addRow("", self.dry_run)
+        self.dev_mode = QCheckBox(
+            "Developer mode: adds a Developer screen with mail traces, Gmail calls, logs and tests"
+        )
+        self.dev_mode.setToolTip(
+            "For finding out why something is not working. It keeps extra records in memory "
+            "while it is on; sign-in tokens are never shown."
+        )
+        form.addRow("", self.dev_mode)
         self._build_updates_and_content(form)
 
     def _build_updates_and_content(self, form: QFormLayout) -> None:
@@ -649,6 +664,7 @@ class SettingsPage(QWidget):
         self.auto_default.setChecked(c.auto_reply_default)
         self.auto_copy.setChecked(c.auto_copy_certain)
         self.dry_run.setChecked(c.dry_run)
+        self.dev_mode.setChecked(c.dev.enabled)
         self.check_updates.setChecked(c.updates.check_on_start)
         self.folders.set_paths(c.source_roots)
         self.default_reply.setPlainText(c.default_reply_template)
@@ -689,6 +705,7 @@ class SettingsPage(QWidget):
         base["auto_reply_default"] = self.auto_default.isChecked()
         base["auto_copy_certain"] = self.auto_copy.isChecked()
         base["dry_run"] = self.dry_run.isChecked()
+        base["dev"]["enabled"] = self.dev_mode.isChecked()
         base["updates"]["check_on_start"] = self.check_updates.isChecked()
         base["source_roots"] = self.folders.paths()
         typed = self.default_reply.toPlainText()

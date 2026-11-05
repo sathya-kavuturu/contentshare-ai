@@ -28,6 +28,7 @@ _GLYPHS = {  # Segoe Fluent Icons / Segoe MDL2 Assets code points
     "History": "",
     "Settings": "",
     "Help": "",
+    "Developer": "",  # the code brackets
 }
 _ICON_FONTS = ("Segoe Fluent Icons", "Segoe MDL2 Assets")
 

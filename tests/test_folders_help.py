@@ -415,7 +415,7 @@ def test_help_describes_every_setting_by_the_name_shown_on_screen(rig: Rig) -> N
 
 def test_the_window_has_a_help_screen_and_can_open_a_topic(rig: Rig) -> None:
     window = rig.window
-    assert PAGES[-1] == "Help" and window.nav.count() == len(PAGES)
+    assert PAGES[-2] == "Help" and window.nav.count() == len(PAGES)
     window.show_help("gmail")
     assert window.stack.currentWidget() is window.help
     assert window.nav.currentRow() == PAGES.index("Help")

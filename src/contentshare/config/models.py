@@ -360,6 +360,19 @@ class SmartSettings(BaseModel):
     keep_loaded_minutes: Annotated[int, Field(ge=1, le=120)] = 10  # then it is stopped, freeing RAM
 
 
+class DevSettings(BaseModel):
+    """Developer mode: tools that show what the program does at each step. Off by default; the
+    mail trace never holds sign-in tokens, and mail text only on this screen."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    debug_log: bool = False  # the log keeps every detail, not only warnings and errors
+    no_replies: bool = False  # nothing is sent to anyone while testing
+    fake_gmail: bool = False  # canned test emails instead of the real mailbox
+    include_mail_text: bool = False  # the copied diagnostics also hold the mail text
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -375,6 +388,7 @@ class AppConfig(BaseModel):
     index: IndexSettings = Field(default_factory=IndexSettings)
     gmail: GmailSettings = Field(default_factory=GmailSettings)
     smart: SmartSettings = Field(default_factory=SmartSettings)
+    dev: DevSettings = Field(default_factory=DevSettings)
     appearance: Literal["system", "light", "dark"] = "system"  # follow Windows, or force one
     # Window layout the person chose (remembered, never needed for anything to work)
     user_name: str = ""  # who is using the app (asked when it opens); shown in the History
