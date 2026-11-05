@@ -273,6 +273,8 @@ class IntakeService:
         verdict = "a content request" if reading.is_request else "not a content request"
         names = "; ".join(reading.folders) or "none"
         reason = f"Local model: {verdict}; folders: {names}; confidence {reading.confidence:.0%}"
+        if reading.seconds > 0:
+            reason += f"; answered in {reading.seconds:.1f} s"
         if not request_ids:
             self.repo.log("model", "model_read", None, reason=reason, gmail_id=msg.message_id)
         for request_id in request_ids:

@@ -54,6 +54,44 @@ def test_what_the_model_found_is_described_in_words() -> None:
     assert "• Talk A" in text and "• Talk B" in text and "90%" in text
 
 
+def test_try_dialog_offers_sample_emails_and_shows_the_answer_and_time(
+    rig: Rig,  # noqa: F811
+    qtbot: Any,
+) -> None:
+    from contentshare.smart.samples import SAMPLES
+
+    dialog = TryDialog(rig.window.ctx)
+    qtbot.addWidget(dialog)
+    assert dialog.template.count() == len(SAMPLES) + 1
+    assert dialog.subject.text() == SAMPLES[0].subject  # the first sample is already there
+    dialog.template.setCurrentIndex(3)
+    assert (
+        dialog.body.toPlainText() == SAMPLES[2].body and SAMPLES[2].expect in dialog.expect.text()
+    )
+    dialog.body.setPlainText(dialog.body.toPlainText() + "\nAlso a changed line")  # editable
+    seen: list[str] = []
+    rig.controller.smart_test = lambda _s, b: (  # type: ignore[method-assign]
+        seen.append(b)
+        or Reading(True, ("Talk A",), 0.9, seconds=2.34, answer='{"is_request": true}')
+    )
+    dialog.go.click()
+    qtbot.waitUntil(lambda: "answered in 2.3 s" in dialog.outcome.text())
+    assert "changed line" in seen[0] and dialog.answer.toPlainText() == '{"is_request": true}'
+    dialog.template.setCurrentIndex(0)
+    assert dialog.subject.text() == "" and dialog.body.toPlainText() == ""
+
+
+def test_try_dialog_says_when_the_model_was_not_asked(
+    rig: Rig,  # noqa: F811
+    qtbot: Any,
+) -> None:
+    dialog = TryDialog(rig.window.ctx)
+    qtbot.addWidget(dialog)
+    rig.controller.smart_test = lambda _s, _b: Reading(False, reason="no sign of a request")  # type: ignore[method-assign]
+    dialog.go.click()
+    qtbot.waitUntil(lambda: "was not asked" in dialog.outcome.text())
+
+
 def test_try_dialog_shows_the_answer_or_the_reason_it_failed(
     rig: Rig,  # noqa: F811
     qtbot: Any,

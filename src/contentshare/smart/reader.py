@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
+import time
 from typing import Any
 
 from contentshare.config.models import SmartSettings
@@ -37,12 +39,18 @@ class SmartReader:
         if not looks_like_request(subject, text):
             return Reading(False, reason="no sign of a request")
         examples = self._examples(f"{subject}\n{text}") if self.settings.learn else []
-        reply = self.runtime.chat(build_messages(subject, text, examples), ANSWER_SCHEMA)
+        messages = build_messages(subject, text, examples)
+        self.runtime.start()  # so the time below is the answer's, not the model's start-up
+        started = time.monotonic()
+        reply = self.runtime.chat(messages, ANSWER_SCHEMA)
+        seconds = time.monotonic() - started
         reading = parse_answer(reply, f"{subject}\n{text}")
         if reading is None:
             log.warning("the smart reader gave an answer in the wrong shape")
-            return Reading(False, reason="the answer could not be read")
-        return reading
+            return Reading(
+                False, reason="the answer could not be read", seconds=seconds, answer=reply
+            )
+        return dataclasses.replace(reading, seconds=seconds, answer=reply)
 
     def _examples(self, text: str) -> list[Example]:
         pool = []

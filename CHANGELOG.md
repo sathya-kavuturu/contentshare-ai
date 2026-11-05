@@ -6,6 +6,10 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Try the model on sample emails.** *Try it on an email…* now offers 12 hard sample emails (a
+  request in a story, forwarded chains, hidden instructions, newsletters, a table with conditions).
+  Choose one, edit the text, and see what the model found, its own answer and how long it took.
+  The History of a request also shows how many seconds the model took.
 - **Smart reading wording and prompt.** The master switch is now "Use the local model"; a second tick
   controls mail from senders in no department, and each department has its own tick. **Show the
   prompt…** shows exactly what the model is sent.

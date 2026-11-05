@@ -98,8 +98,9 @@ this department's emails with the local model*: when the emails of a department 
 that are exactly folder names, the model reads them too. **Show the prompt…** shows exactly what
 the model is sent. **Start the model now / Stop the model**
 controls it by hand; otherwise it starts when mail needs reading and stops after the idle time.
-Every answer of the model (a request or not, the folders, the confidence) is written to the
-History of the request.
+Every answer of the model (a request or not, the folders, the confidence and how many seconds it
+took) is written to the History of the request. **Try it on an email…** has 12 hard sample emails
+to choose from and edit; it shows the answer and the time.
 
 **Safety.** Mail from strangers is untrusted input. The model has no tools: it cannot copy, send or
 open anything, and its answer is only ever used as search text. Everything runs on this PC; email

@@ -317,6 +317,9 @@ class FakeRuntime:
     def status(self, _settings: SmartSettings) -> Any:
         return type("S", (), {"ready": self.ready})()
 
+    def start(self) -> None:
+        pass
+
     def chat(self, messages: list[dict[str, str]], _schema: dict[str, Any]) -> str:
         self.calls.append(messages)
         return self.reply
@@ -337,6 +340,24 @@ def test_the_reader_returns_checked_names_and_survives_a_bad_answer(h: Harness) 
     assert good.read("Request", body).folders == ("Talk Alpha Seven",)
     bad = SmartReader(FakeRuntime("garbage"), h.world.repo, SmartSettings())  # type: ignore[arg-type]
     assert bad.read("Request", body) == Reading(False, reason="the answer could not be read")
+    assert bad.read("Request", body).answer == "garbage"  # what the model said is kept
+
+
+def test_the_reader_notes_the_answer_and_how_long_the_model_took(h: Harness) -> None:  # noqa: F811
+    reply = answer(folders=["Talk Alpha Seven"])
+    reader = SmartReader(FakeRuntime(reply), h.world.repo, SmartSettings())  # type: ignore[arg-type]
+    reading = reader.read("Request", "Kindly share the recording Talk Alpha Seven")
+    assert reading.answer == reply and reading.seconds >= 0
+    skipped = reader.read("Your invoice", "Total due 40 USD")
+    assert skipped.seconds == 0 and skipped.answer == ""
+
+
+def test_every_sample_email_is_complete_and_has_its_own_title() -> None:
+    from contentshare.smart.samples import SAMPLES
+
+    assert len(SAMPLES) >= 10
+    assert len({s.title for s in SAMPLES}) == len(SAMPLES)
+    assert all(s.subject and s.body and s.expect for s in SAMPLES)
 
 
 def test_decisions_are_remembered_and_shown_to_the_model_next_time(h: Harness) -> None:  # noqa: F811
@@ -476,7 +497,7 @@ def test_a_department_that_uses_the_model_gets_names_from_it_and_the_answer_is_l
     world.gmail.add(
         make_message(message_id="d2", subject="Hello", body="Kindly share the recordings")
     )
-    reader = FakeReader(Reading(True, (EXISTING,), 0.8))
+    reader = FakeReader(Reading(True, (EXISTING,), 0.8, seconds=3.26))
     report = _with_model_departments(world, reader).check_now()
     assert reader.calls == 1 and report.requests == 1
     (row,) = world.repo.list_requests()
@@ -487,6 +508,7 @@ def test_a_department_that_uses_the_model_gets_names_from_it_and_the_answer_is_l
     assert entry["actor"] == "model"
     reason = json.loads(entry["detail"])["reason"]
     assert EXISTING in reason and "80%" in reason and "a content request" in reason
+    assert "answered in 3.3 s" in reason  # the time shows in the history
 
 
 def test_a_department_without_the_option_never_asks_the_model(world: MailWorld) -> None:

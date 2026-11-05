@@ -48,6 +48,8 @@ class Reading:
     confidence: float = 0.0
     reason: str = ""
     dropped: tuple[str, ...] = field(default=(), compare=False)  # proposed but not in the email
+    seconds: float = field(default=0.0, compare=False)  # how long the model took (0: not asked)
+    answer: str = field(default="", compare=False)  # the model's own answer, as it sent it
 
 
 def normalise(text: str) -> str:

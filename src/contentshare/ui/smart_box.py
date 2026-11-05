@@ -31,6 +31,7 @@ from contentshare.smart.prompt import (
     SYSTEM,
     build_messages,
 )
+from contentshare.smart.samples import SAMPLES
 from contentshare.smart.schema import ANSWER_SCHEMA, Reading
 from contentshare.ui.context import UiContext
 from contentshare.ui.widgets import Combo
@@ -114,23 +115,47 @@ def describe(reading: Reading) -> str:
     """What the model made of a sample email, in words."""
     if not reading.is_request:
         why = f" ({reading.reason})" if reading.reason else ""
-        return f"Not a content request{why}."
-    names = "\n".join(f"  • {name}" for name in reading.folders)
-    return f"A content request. Folders found:\n{names}\n(confidence {reading.confidence:.0%})"
+        text = f"Not a content request{why}."
+    else:
+        names = "\n".join(f"  • {name}" for name in reading.folders) or "  (no names)"
+        text = f"A content request. Folders found:\n{names}\n(confidence {reading.confidence:.0%})"
+    if reading.dropped:
+        text += "\nLeft out (not written in the email, or not a plain name): " + "; ".join(
+            reading.dropped
+        )
+    return text
+
+
+def timing(reading: Reading) -> str:
+    if reading.seconds > 0:
+        return f"The model answered in {reading.seconds:.1f} s."
+    return "The model was not asked: the email has none of the words that ask for something."
 
 
 class TryDialog(QDialog):
-    """Paste an email, see what the model finds. Nothing is saved or sent."""
+    """Choose a sample email (or paste one), edit it, see what the model answers and how long it
+    took. Nothing is saved or sent."""
 
     def __init__(self, ctx: UiContext, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.ctx = ctx
         self.setWindowTitle("Try the smart reader")
-        self.resize(640, 520)
+        self.resize(720, 760)
         layout = QVBoxLayout(self)
         layout.addWidget(
-            QLabel("Paste the subject and text of an email. Nothing is saved or sent.")
+            QLabel(
+                "Choose a sample email, change the text if you like, and press Read it. "
+                "Nothing is saved or sent."
+            )
         )
+        self.template = Combo()
+        self.template.setAccessibleName("Sample email")
+        self.template.addItem("Your own email (empty)")
+        for sample in SAMPLES:
+            self.template.addItem(sample.title)
+        self.template.currentIndexChanged.connect(self._choose)
+        self.expect = QLabel()
+        self.expect.setWordWrap(True)
         self.subject = QLineEdit(placeholderText="Subject")
         self.subject.setAccessibleName("Subject")
         self.body = QPlainTextEdit()
@@ -138,12 +163,22 @@ class TryDialog(QDialog):
         self.body.setPlaceholderText("Email text")
         self.outcome = QLabel()
         self.outcome.setWordWrap(True)
+        self.answer = QPlainTextEdit()
+        self.answer.setReadOnly(True)
+        self.answer.setAccessibleName("The model's own answer")
+        self.answer.setPlaceholderText("The model's own answer appears here")
+        self.answer.setMaximumHeight(130)
         self.go = QPushButton("Read it")
         self.go.setProperty("primary", True)
         self.go.clicked.connect(self._read)
+        form = QFormLayout()
+        form.addRow("Sample", self.template)
+        layout.addLayout(form)
+        layout.addWidget(self.expect)
         layout.addWidget(self.subject)
         layout.addWidget(self.body, 1)
         layout.addWidget(self.outcome)
+        layout.addWidget(self.answer)
         row = QHBoxLayout()
         row.addStretch(1)
         row.addWidget(self.go)
@@ -151,10 +186,26 @@ class TryDialog(QDialog):
         close.clicked.connect(self.reject)
         row.addWidget(close)
         layout.addLayout(row)
+        self._choose(1)  # the first sample, so there is something to read at once
+        self.template.setCurrentIndex(1)
+
+    def _choose(self, index: int) -> None:
+        if index <= 0:
+            self.expect.setText("")
+            self.subject.clear()
+            self.body.clear()
+            return
+        sample = SAMPLES[index - 1]
+        self.expect.setText(f"A good answer: {sample.expect}")
+        self.subject.setText(sample.subject)
+        self.body.setPlainText(sample.body)
+        self.outcome.setText("")
+        self.answer.clear()
 
     def _read(self) -> None:
         subject, body = self.subject.text(), self.body.toPlainText()
         self.go.setEnabled(False)
+        self.answer.clear()
         self.outcome.setText(
             "Reading… the first time the model has to start, which can take a minute."
         )
@@ -162,7 +213,8 @@ class TryDialog(QDialog):
 
         def done(reading: Reading) -> None:
             self.go.setEnabled(True)
-            self.outcome.setText(describe(reading))
+            self.outcome.setText(f"{describe(reading)}\n{timing(reading)}")
+            self.answer.setPlainText(reading.answer)
 
         def failed(exc: Exception) -> None:
             self.go.setEnabled(True)

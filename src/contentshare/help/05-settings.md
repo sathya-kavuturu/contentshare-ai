@@ -114,7 +114,7 @@ then approve. See [Smart reading](help:smart) for how it works.
 | **Learn from my approvals and rejections** | Keeps what you decided about these emails and shows the most similar ones to the model as examples. It does not train anything. **Forget what it learned** deletes them. |
 | **Read at most** | How many emails the model reads in one check. The rest wait for the next check. |
 | **Stop the model after** | The model is stopped after this many idle minutes so it gives its memory back. |
-| **Download…** | Downloads the model and the program that runs it once, and checks each file before it is used. **Try it on an email…** shows what it finds in an email you paste. |
+| **Download…** | Downloads the model and the program that runs it once, and checks each file before it is used. **Try it on an email…** opens a window with 12 sample emails (hard ones: names buried in a story, a forwarded chain, instructions hidden in the text, a newsletter, a table with conditions). Choose one, change the text if you like, press Read it, and see what the model found, its own raw answer and how many seconds it took. Nothing is saved or sent. |
 
 ## Matching and copying
 
