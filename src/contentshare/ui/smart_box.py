@@ -3,6 +3,7 @@ language model that runs on this PC."""
 
 from __future__ import annotations
 
+import json
 import threading
 from typing import Any
 
@@ -23,20 +24,82 @@ from PySide6.QtWidgets import (
 from contentshare.app.controller import ActionError
 from contentshare.config.models import AppConfig
 from contentshare.smart.catalog import MODELS
-from contentshare.smart.schema import Reading
+from contentshare.smart.prompt import (
+    MAX_BODY_CHARS,
+    MAX_EXAMPLES,
+    REQUEST_HINTS,
+    SYSTEM,
+    build_messages,
+)
+from contentshare.smart.schema import ANSWER_SCHEMA, Reading
 from contentshare.ui.context import UiContext
 from contentshare.ui.widgets import Combo
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
 HELP = (
-    "When this is on, ContentShare also reads mail from people who are in no department. A small "
-    "language model on this PC (nothing is sent anywhere) finds the folder names in the email, "
-    "and each name is looked up on the storage server. Everything it finds waits for you: pick "
-    "the department, check the names, then approve. The model files are downloaded once "
-    "(they are checked before use) and are open-source: Qwen3 (Apache License 2.0) run by "
-    "llama.cpp (MIT)."
+    "A small language model on this PC (nothing is sent anywhere) reads an email and finds the "
+    "folder names in it; each name is then looked up on the storage server. It is used in two "
+    "places: for mail from people who are in no department (the second tick below), and for "
+    "any department whose own tick is set (Settings → Departments → Local model), when the "
+    "usual reading cannot find exact folder names. Whatever it finds waits for your approval. "
+    "The model files are downloaded once (they are checked before use) and are open-source: "
+    "Qwen3 (Apache License 2.0) run by llama.cpp (MIT)."
 )
+
+
+def prompt_text() -> str:
+    """Everything the model is sent for one email, in the order it is sent."""
+    sample = build_messages("<the subject>", "<the text of the email>", [])
+    parts = [
+        "1. INSTRUCTIONS (always sent first)",
+        SYSTEM,
+        "",
+        "2. THE EMAIL (sent next, as the user's message)",
+        sample[-1]["content"],
+        f"(the text is cut at {MAX_BODY_CHARS} characters; quoted replies, signatures and "
+        "control characters are removed first; any <email> tags written inside the email are "
+        "deleted)",
+        "",
+        "3. EXAMPLES (only when “Learn from my approvals and rejections” is ticked)",
+        f"Up to {MAX_EXAMPLES} earlier emails that look like this one are put between 1 and 2, "
+        "each followed by the answer you decided on, in the same JSON shape as below.",
+        "",
+        "4. THE ANSWER SHAPE (enforced by the model server)",
+        json.dumps(ANSWER_SCHEMA, indent=2),
+        "",
+        "BEFORE THE MODEL IS ASKED",
+        "An email is not sent to the model at all unless it contains one of these words: "
+        + ", ".join(REQUEST_HINTS)
+        + ".",
+    ]
+    return "\n".join(parts)
+
+
+class PromptDialog(QDialog):
+    """Shows the instructions and layout sent to the model. Read-only."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("What is sent to the model")
+        self.resize(720, 640)
+        layout = QVBoxLayout(self)
+        layout.addWidget(
+            QLabel(
+                "This is exactly what the model on this PC is given for each email. "
+                "It cannot be changed here."
+            )
+        )
+        text = QPlainTextEdit(prompt_text())
+        text.setReadOnly(True)
+        text.setAccessibleName("Prompt")
+        layout.addWidget(text, 1)
+        row = QHBoxLayout()
+        row.addStretch(1)
+        close = QPushButton("Close")
+        close.clicked.connect(self.accept)
+        row.addWidget(close)
+        layout.addLayout(row)
 
 
 def _size(bytes_: int) -> str:
@@ -119,7 +182,8 @@ class SmartBox(QWidget):
         self._stop = threading.Event()
         self._installing = False
         self._starting = False
-        self.enabled = QCheckBox("Read emails from senders that are not in a department")
+        self.enabled = QCheckBox("Use the local model (master switch: off = it is never started)")
+        self.unlisted = QCheckBox("Also read emails from senders that are not in any department")
         self.model = Combo()
         self.model.setAccessibleName("Model")
         for key, choice in MODELS.items():
@@ -154,6 +218,8 @@ class SmartBox(QWidget):
         )
         self.run_button = QPushButton("Start the model now")
         self.run_button.clicked.connect(self._toggle_run)
+        self.prompt_button = QPushButton("Show the prompt…")
+        self.prompt_button.clicked.connect(lambda: PromptDialog(self).exec())
         self.try_button = QPushButton("Try it on an email…")
         self.try_button.clicked.connect(self._try)
         self.forget = QPushButton("Forget what it learned")
@@ -176,12 +242,14 @@ class SmartBox(QWidget):
         buttons = QHBoxLayout()
         buttons.addWidget(self.run_button)
         buttons.addWidget(self.try_button)
+        buttons.addWidget(self.prompt_button)
         buttons.addWidget(self.forget)
         buttons.addStretch(1)
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(8)
         outer.addWidget(self.enabled)
+        outer.addWidget(self.unlisted)
         outer.addLayout(form)
         outer.addLayout(status_row)
         outer.addWidget(self.progress)
@@ -192,6 +260,7 @@ class SmartBox(QWidget):
     def load(self, config: AppConfig) -> None:
         smart = config.smart
         self.enabled.setChecked(smart.enabled)
+        self.unlisted.setChecked(smart.read_unlisted)
         self.model.setCurrentIndex(max(0, self.model.findData(smart.model)))
         self.gpu.setChecked(smart.use_graphics_card)
         self.learn.setChecked(smart.learn)
@@ -202,6 +271,7 @@ class SmartBox(QWidget):
     def values(self) -> dict[str, Any]:
         return {
             "enabled": self.enabled.isChecked(),
+            "read_unlisted": self.unlisted.isChecked(),
             "model": str(self.model.currentData() or "recommended"),
             "use_graphics_card": self.gpu.isChecked(),
             "learn": self.learn.isChecked(),

@@ -104,3 +104,11 @@ def test_a_request_from_an_unlisted_sender_offers_choose_department(
     (card,) = rig.cards()
     assert "Choose department…" not in [b.text() for b in card.findChildren(QPushButton)]
     assert QDialog is not None
+
+
+def test_the_prompt_shown_in_settings_is_what_is_sent_to_the_model() -> None:
+    from contentshare.smart.prompt import SYSTEM
+    from contentshare.ui.smart_box import prompt_text
+
+    text = prompt_text()
+    assert SYSTEM in text and "<email>" in text and "is_request" in text

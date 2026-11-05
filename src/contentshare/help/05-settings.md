@@ -106,7 +106,9 @@ then approve. See [Smart reading](help:smart) for how it works.
 
 | Setting | What it does |
 |---|---|
-| **Read emails from senders that are not in a department** | The on/off switch. Off: only mail from the senders you listed in a department is read. On: recent mail in your main inbox is also read (automatic senders such as no-reply are left out). |
+| **Use the local model (master switch)** | Off: the model is never started. On: it can be used, as set by the next tick and by each department's own tick (Settings → Departments → *Local model*, for emails of that department where the usual reading finds no exact folder names). |
+| **Also read emails from senders that are not in any department** | On: recent mail in your main inbox from other people is read too (automatic senders such as no-reply are left out). Off: only departments' own mail is read. |
+| **Show the prompt…** | Shows exactly what the model is sent for each email: the instructions, the layout of the email, the examples, the answer shape. Read-only. |
 | **Model** | **Qwen3 4B** (about 2.5 GB) gives the best results; **Qwen3 1.7B** (about 1.8 GB) is smaller and faster but less exact. Both are open-source (Apache License 2.0). |
 | **Use the graphics card (faster; needs one with 2 GB or more)** | Runs the model on the graphics card. Leave it off if the PC has no separate graphics card or if reading fails. |
 | **Learn from my approvals and rejections** | Keeps what you decided about these emails and shows the most similar ones to the model as examples. It does not train anything. **Forget what it learned** deletes them. |

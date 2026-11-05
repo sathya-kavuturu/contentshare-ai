@@ -179,7 +179,7 @@ class IntakeService:
             for message_id in self.gateway.list_message_ids(query, room):
                 seen.setdefault(message_id)
         room = self.config.gmail.max_messages - len(seen)
-        if self.config.smart.enabled and room > 0:
+        if self.config.smart.enabled and self.config.smart.read_unlisted and room > 0:
             unlisted = build_unlisted_query(self.config)
             for message_id in self.gateway.list_message_ids(unlisted, room):
                 seen.setdefault(message_id)
@@ -194,7 +194,7 @@ class IntakeService:
             return self._ignore(msg, "sent by this account", report)
         dept = self.config.department_for_sender(msg.sender_email)
         if dept is None:
-            if self.config.smart.enabled:
+            if self.config.smart.enabled and self.config.smart.read_unlisted:
                 return self._handle_unlisted(msg, report)
             return self._ignore(msg, "sender is not in any department", report)
         if self._is_followup_without_request(msg):

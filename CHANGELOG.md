@@ -6,6 +6,9 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Smart reading wording and prompt.** The master switch is now "Use the local model"; a second tick
+  controls mail from senders in no department, and each department has its own tick. **Show the
+  prompt…** shows exactly what the model is sent.
 - **Allowed hours for the automatic check.** With a check every 15 minutes to 12 hours, 
   Settings → General → *Only between* limits the checks to a time window (overnight windows such
   as 22:00 to 06:00 work). The download bar in Smart reading is taller and shows its percentage.

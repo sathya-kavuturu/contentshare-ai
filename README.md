@@ -91,10 +91,12 @@ content, and pulls out the folder names.
    names (a note says they were read by the smart reader), choose the folders, approve. Nothing is
    ready, copied or answered by itself.
 
-**Switches.** *Settings → Smart reading → Read emails from senders that are not in a department*
-is the master switch: off (the default) means the model is never started. Each department also
-has a tick, *Also read this department's emails with the local model*, used only when the
-emails have no lines that are exactly folder names. **Start the model now / Stop the model**
+**Switches.** *Settings → Smart reading → Use the local model* is the master switch: off (the
+default) means the model is never started. A second tick, *Also read emails from senders that are
+not in any department*, controls the stranger mail. Each department also has a tick, *Also read
+this department's emails with the local model*: when the emails of a department have no lines
+that are exactly folder names, the model reads them too. **Show the prompt…** shows exactly what
+the model is sent. **Start the model now / Stop the model**
 controls it by hand; otherwise it starts when mail needs reading and stops after the idle time.
 Every answer of the model (a request or not, the folders, the confidence) is written to the
 History of the request.

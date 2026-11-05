@@ -349,7 +349,10 @@ class SmartSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    enabled: bool = False
+    enabled: bool = False  # the master switch: off means the model is never started
+    # With the switch on: also read mail from senders that are in no department. (Departments use
+    # the model only if their own tick is set.)
+    read_unlisted: bool = True
     model: Literal["recommended", "small"] = "recommended"
     use_graphics_card: bool = False  # the Vulkan build, for a graphics card with 2 GB or more
     learn: bool = True  # keep the person's corrections to show the model as examples

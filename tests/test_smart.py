@@ -610,3 +610,25 @@ def test_a_date_range_written_before_a_name_is_not_part_of_it() -> None:
     line = "Nov 22-28  Amber Step 4 English 31-oct-2026"
     reading = parse_answer(answer(folders=[line]), "Please share " + line + " thanks")
     assert reading is not None and reading.folders == ("Amber Step 4 English 31-oct-2026",)
+
+
+def test_unlisted_mail_can_be_switched_off_while_departments_keep_the_model(
+    world: MailWorld,
+) -> None:
+    stranger(world, "Kindly share the recordings for us.")
+    world.gmail.add(
+        make_message(message_id="d6", subject="Hello", body="Kindly share the recordings")
+    )
+    reader = FakeReader(Reading(True, (EXISTING,)))
+    departments = [d.model_copy(update={"use_local_llm": True}) for d in world.config.departments]
+    config = world.config.model_copy(
+        update={
+            "smart": SmartSettings(enabled=True, read_unlisted=False),
+            "departments": departments,
+        }
+    )
+    IntakeService(
+        world.gateway, world.repo, world.index, config, today=lambda: TODAY, reader=reader
+    ).check_now()
+    assert reader.calls == 1  # only the department's mail
+    assert all(r["department"] is not None for r in world.repo.list_requests())
