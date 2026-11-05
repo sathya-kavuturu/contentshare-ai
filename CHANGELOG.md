@@ -6,6 +6,9 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Allowed hours for the automatic check.** With a check every 15 minutes to 12 hours, 
+  Settings → General → *Only between* limits the checks to a time window (overnight windows such
+  as 22:00 to 06:00 work). The download bar in Smart reading is taller and shows its percentage.
 - **Local model, per department.** Each department has a tick "Also read this department's
   emails with the local model": when an email has no lines that are exactly folder names, the
   model suggests the names (if it cannot answer, the usual reading is used). Settings → Smart

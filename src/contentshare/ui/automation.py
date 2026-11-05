@@ -46,6 +46,7 @@ class Automation(QObject):
             run_missed=c.schedule.run_missed_check_on_startup,
             enabled=self._can_run(),
             every=self._every(),
+            window=self._window(),
         )
         self._timer.start()
 
@@ -55,8 +56,15 @@ class Automation(QObject):
     def config_changed(self) -> None:
         c = self.controller.config
         self.scheduler.reconfigure(
-            c.schedule.daily_check_time, enabled=self._can_run(), every=self._every()
+            c.schedule.daily_check_time,
+            enabled=self._can_run(),
+            every=self._every(),
+            window=self._window(),
         )
+
+    def _window(self) -> tuple[str, str]:
+        s = self.controller.config.schedule
+        return (s.window_from, s.window_to)
 
     def _can_run(self) -> bool:
         return self.controller.config.schedule.daily_check_enabled

@@ -144,6 +144,14 @@ class SmartBox(QWidget):
         self.stop.setVisible(False)
         self.progress = QProgressBar()
         self.progress.setVisible(False)
+        self.progress.setTextVisible(True)
+        self.progress.setFormat("%p%")
+        # The app-wide thin bar (8 px) has no room for its text; this one is tall enough.
+        self.progress.setStyleSheet(
+            "QProgressBar { min-height: 22px; max-height: 22px; border-radius: 6px; "
+            "text-align: center; font-weight: 600; } "
+            "QProgressBar::chunk { border-radius: 6px; }"
+        )
         self.run_button = QPushButton("Start the model now")
         self.run_button.clicked.connect(self._toggle_run)
         self.try_button = QPushButton("Try it on an email…")

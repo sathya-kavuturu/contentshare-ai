@@ -772,3 +772,34 @@ def test_installer_script_matches_the_program() -> None:
     assert "PrivilegesRequired=lowest" in iss  # never asks for administrator rights
     assert "--remove-startup" in iss
     assert "--quit" in iss
+
+
+# --------------------------------------------------------------------------- allowed hours
+def test_checks_every_so_often_happen_only_inside_the_allowed_hours() -> None:
+    sched, clock = make_scheduler(at(3, 17))
+    sched.start(
+        "09:00", last_check=at(3, 17), run_missed=False,
+        every=timedelta(minutes=30), window=("09:00", "18:00"),
+    )  # fmt: skip
+    assert sched.next_run == at(3, 17) + timedelta(minutes=30)
+    clock.t = at(3, 17, 30)
+    assert sched.poll() is not None
+    sched.finished(ok=True)  # 18:00 is still inside
+    assert sched.next_run == at(3, 18)
+    clock.t = at(3, 18)
+    assert sched.poll() is not None
+    assert sched.finished(ok=True) == at(4, 9)  # 18:30 is outside: wait for 09:00 tomorrow
+
+
+def test_an_overnight_window_and_a_missed_check_outside_the_hours() -> None:
+    sched, clock = make_scheduler(at(3, 12))
+    sched.start(
+        "09:00", last_check=at(3, 10), run_missed=True,
+        every=timedelta(minutes=30), window=("22:00", "06:00"),
+    )  # fmt: skip
+    assert sched.next_run == at(3, 22)  # overdue, but noon is outside 22:00-06:00
+    clock.t = at(3, 22, 5)
+    assert sched.poll() is not None
+    assert sched.finished(ok=True) == at(3, 22, 35)
+    sched.reconfigure("09:00", every=timedelta(minutes=30), window=None)
+    assert sched.next_run == at(3, 22, 35)

@@ -319,7 +319,7 @@ class SettingsPage(QWidget):
         label.setContentsMargins(0, 0 if first else 12, 0, 0)
         form.addRow(label)
 
-    def _build_general(self) -> None:
+    def _build_general(self) -> None:  # noqa: PLR0915 (one tab, built top to bottom)
         form = self._tab("General")
         self._section(form, "Appearance", first=True)
         self.appearance = Combo()
@@ -342,9 +342,24 @@ class SettingsPage(QWidget):
         self.check_time.setDisplayFormat("HH:mm")
         self.check_time.setAccessibleName("Daily check time")
         self.check_time.setMaximumWidth(140)
+        self.window_from = QTimeEdit()
+        self.window_to = QTimeEdit()
+        for edit, name in ((self.window_from, "Check from"), (self.window_to, "Check until")):
+            edit.setDisplayFormat("HH:mm")
+            edit.setAccessibleName(name)
+            edit.setMaximumWidth(110)
+        self.window_label = QLabel("Only between")
+        window_row = QWidget()
+        window_box = QHBoxLayout(window_row)
+        window_box.setContentsMargins(0, 0, 0, 0)
+        window_box.addWidget(self.window_from)
+        window_box.addWidget(QLabel("and"))
+        window_box.addWidget(self.window_to)
+        window_box.addStretch(1)
         self.missed = QCheckBox("Check for requests when the app starts if a check was missed")
         form.addRow("", self.daily_enabled)
         form.addRow("How often", self.every)
+        form.addRow(self.window_label, window_row)
         self.time_label = QLabel("Time of day")
         form.addRow(self.time_label, self.check_time)
         form.addRow("", self.missed)
@@ -581,6 +596,8 @@ class SettingsPage(QWidget):
         self._loaded = c
         hour, minute = (int(p) for p in c.schedule.daily_check_time.split(":"))
         self.check_time.setTime(QTime(hour, minute))
+        self.window_from.setTime(QTime.fromString(c.schedule.window_from, "HH:mm"))
+        self.window_to.setTime(QTime.fromString(c.schedule.window_to, "HH:mm"))
         self.every.setCurrentIndex(max(0, self.every.findData(c.schedule.check_every_minutes)))
         self._show_interval()
         self.appearance.setCurrentIndex(self.appearance.findData(c.appearance))
@@ -622,6 +639,8 @@ class SettingsPage(QWidget):
         base["schedule"].update(
             daily_check_time=self.check_time.time().toString("HH:mm"),
             check_every_minutes=int(self.every.currentData() or 0),
+            window_from=self.window_from.time().toString("HH:mm"),
+            window_to=self.window_to.time().toString("HH:mm"),
             run_missed_check_on_startup=self.missed.isChecked(),
             daily_check_enabled=self.daily_enabled.isChecked(),
             close_to_tray=self.to_tray.isChecked(),
@@ -716,6 +735,8 @@ class SettingsPage(QWidget):
         daily = int(self.every.currentData() or 0) == 0
         self.check_time.setEnabled(daily)
         self.time_label.setEnabled(daily)
+        for widget in (self.window_from, self.window_to, self.window_label):
+            widget.setEnabled(not daily)
 
     # ------------------------------------------------------------------ start at login
     def _startup_text(self) -> str:

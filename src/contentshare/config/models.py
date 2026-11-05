@@ -223,13 +223,17 @@ class ScheduleSettings(BaseModel):
     daily_check_time: str = "09:00"
     # 0 = once a day at ``daily_check_time``; otherwise a check every this many minutes.
     check_every_minutes: int = 0
+    # With a check every so many minutes: only between these times (local time, 24 hours). From
+    # later than to means overnight (for example 22:00 to 06:00). 00:00 to 23:59 is all day.
+    window_from: str = "00:00"
+    window_to: str = "23:59"
     run_missed_check_on_startup: bool = True
     start_with_windows: bool = False
     daily_check_enabled: bool = True
     close_to_tray: bool = True  # the window's close button hides it; Quit is in the tray menu
     notifications: bool = True  # pop-ups (counts only, never email text)
 
-    @field_validator("daily_check_time")
+    @field_validator("daily_check_time", "window_from", "window_to")
     @classmethod
     def _time(cls, value: str) -> str:
         if not _TIME.match(value):

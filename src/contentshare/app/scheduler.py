@@ -57,6 +57,29 @@ class DailyScheduler:
         self._attempt = 0
         self._running = False
         self._enabled = False
+        self._window: tuple[time, time] | None = None  # checks only happen between these times
+
+    # ------------------------------------------------------------------ the allowed hours
+    def _set_window(self, window: tuple[str, str] | None) -> None:
+        self._window = (
+            None if window is None or window[0] == window[1] else
+            (parse_time(window[0]), parse_time(window[1]))
+        )  # fmt: skip
+
+    def _allowed(self, moment: datetime) -> bool:
+        if self._window is None:
+            return True
+        start, end = self._window
+        at = moment.time().replace(second=0, microsecond=0)
+        return start <= at <= end if start <= end else at >= start or at <= end
+
+    def _clamp(self, moment: datetime) -> datetime:
+        """``moment``, or the next time the allowed hours begin if it falls outside them."""
+        if self._allowed(moment) or self._window is None:
+            return moment
+        start = self._window[0]
+        opening = moment.replace(hour=start.hour, minute=start.minute, second=0, microsecond=0)
+        return opening if opening > moment else opening + timedelta(days=1)
 
     # ------------------------------------------------------------------ setup
     def start(
@@ -67,12 +90,15 @@ class DailyScheduler:
         run_missed: bool,
         enabled: bool = True,
         every: timedelta | None = None,
+        window: tuple[str, str] | None = None,
     ) -> None:
         """Begin scheduling. ``last_check`` decides whether a check was already missed.
 
-        ``every`` makes it a check every so often instead of once a day at ``at``."""
+        ``every`` makes it a check every so often instead of once a day at ``at``; ``window``
+        (from, to) limits those checks to the hours between the two times."""
         self._at = parse_time(at)
         self._every = every
+        self._set_window(window)
         self._enabled = enabled
         self._attempt = 0
         self._pending = None
@@ -80,10 +106,10 @@ class DailyScheduler:
         if every is not None:
             due = last_check + every if last_check else now
             if due <= now and run_missed:
-                self._next = now + STARTUP_DELAY  # overdue while the app was closed
+                self._next = self._clamp(now + STARTUP_DELAY)  # overdue while the app was closed
                 self._pending = Due("missed")
             else:
-                self._next = due if due > now else now + every
+                self._next = self._clamp(due if due > now else now + every)
             return
         due_before = latest_occurrence(now, self._at)
         if run_missed and (last_check is None or last_check < due_before):
@@ -93,10 +119,18 @@ class DailyScheduler:
         else:
             self._next = next_occurrence(now, self._at)
 
-    def reconfigure(self, at: str, *, enabled: bool = True, every: timedelta | None = None) -> None:
+    def reconfigure(
+        self,
+        at: str,
+        *,
+        enabled: bool = True,
+        every: timedelta | None = None,
+        window: tuple[str, str] | None = None,
+    ) -> None:
         """The user changed the schedule. It never fires a check by itself, only moves the next."""
         self._at = parse_time(at)
         self._every = every
+        self._set_window(window)
         self._enabled = enabled
         if self._running:
             return
@@ -106,7 +140,7 @@ class DailyScheduler:
 
     def _after(self, now: datetime) -> datetime:
         """The next regular check after one that ran (or was set up) at ``now``."""
-        return now + self._every if self._every else next_occurrence(now, self._at)
+        return self._clamp(now + self._every) if self._every else next_occurrence(now, self._at)
 
     # ------------------------------------------------------------------ state
     @property
@@ -122,7 +156,11 @@ class DailyScheduler:
         """Return a :class:`Due` when a check should start now (and mark it as running)."""
         if not self._enabled or self._running or self._next is None:
             return None
-        if self._now() < self._next:
+        now = self._now()
+        if now < self._next:
+            return None
+        if self._every is not None and not self._allowed(now):
+            self._next = self._clamp(now)  # outside the allowed hours: wait for them to begin
             return None
         due = self._pending or Due("scheduled")
         self._pending = None
