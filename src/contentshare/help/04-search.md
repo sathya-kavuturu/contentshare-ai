@@ -20,6 +20,10 @@ matches **all** of these:
 and reads at most **Emails per check** of them (100 by default). Every other email in the
 mailbox is never opened, and a sender that is not in a department is never asked for.
 
+(With **Smart reading** switched on, recent mail in your main inbox from other senders is also
+read, so that requests from people who are in no department can be found. See
+[Smart reading](help:smart).)
+
 ### What happens to each email
 
 1. **Checked again after it is read.** Gmail's search is only a convenience, so each message is

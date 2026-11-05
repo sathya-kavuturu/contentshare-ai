@@ -282,13 +282,22 @@ def test_a_window_without_an_updater_has_no_box(qtbot: Any, tmp_path: Path, db: 
 # --------------------------------------------------------------------------- help
 def test_all_the_help_topics_are_bundled() -> None:
     topics = load_topics()
-    assert [t.slug for t in topics] == ["start", "gmail", "use", "search", "settings", "trouble"]
+    assert [t.slug for t in topics] == [
+        "start",
+        "gmail",
+        "use",
+        "search",
+        "settings",
+        "smart",
+        "trouble",
+    ]
     assert [t.title for t in topics] == [
         "Getting started",
         "Connect Gmail",
         "Using the app",
         "How searching works",
         "Settings explained",
+        "Smart reading",
         "Troubleshooting",
     ]
 
@@ -424,7 +433,7 @@ def test_settings_gmail_tab_links_to_the_gmail_help(rig: Rig) -> None:
 
 
 def test_the_help_folder_exists_where_the_program_looks() -> None:
-    assert HELP_DIR.is_dir() and len(list(HELP_DIR.glob("*.md"))) == 6
+    assert HELP_DIR.is_dir() and len(list(HELP_DIR.glob("*.md"))) == 7
 
 
 def test_the_search_help_quotes_the_real_defaults_and_messages() -> None:

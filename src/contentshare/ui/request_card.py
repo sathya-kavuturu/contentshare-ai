@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QPushButton,
     QScrollArea,
     QSizePolicy,
@@ -489,6 +490,10 @@ class RequestCard(QFrame):
             buttons.append(_button(verb, self._approve, primary=True))
         if verified:
             buttons.append(_button("Preview and send reply…", self._reply, primary=not ready))
+        if group.lead.department is None and self.ctx.controller.config.departments:
+            buttons.append(
+                _button("Choose department…", self._choose_department, primary=not ready)
+            )  # a sender in no department: say which one this is for
         buttons.append(_button("Add a folder…", self._add_folder))  # on every card, always
         if group.in_states(_CAN_SKIP):
             buttons.append(_button("Skip all" if group.many else "Skip", self._skip))
@@ -545,6 +550,25 @@ class RequestCard(QFrame):
             self.ctx.fail(self._owner(), title, exc)
 
         return handler
+
+    # ------------------------------------------------------------------ a sender in no department
+    def _choose_department(self) -> None:
+        names = [d.name for d in self.ctx.controller.config.departments]
+        chosen, ok = QInputDialog.getItem(
+            self,
+            "Choose department",
+            "This request is for the department:\n(its folders are searched, and the content "
+            "is copied to its destination)",
+            names,
+            0,
+            False,
+        )
+        if not ok or not chosen:
+            return
+        try:
+            self.ctx.controller.assign_department(self.group.email_id, chosen)
+        except Exception as exc:
+            self.ctx.fail(self, "Cannot choose this department", exc)
 
     # ------------------------------------------------------------------ add a folder to the email
     def _unsearched_lines(self) -> list[str]:

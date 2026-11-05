@@ -26,3 +26,11 @@ def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     home = tmp_path / "appdata"
     monkeypatch.setenv("CONTENTSHARE_HOME", str(home))
     return home
+
+
+@pytest.fixture(autouse=True)
+def _never_use_the_real_data_folder(
+    tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r"""No test may create or read %APPDATA%\ContentShareAI (the model folder, logs, settings)."""
+    monkeypatch.setenv("CONTENTSHARE_HOME", str(tmp_path_factory.mktemp("home")))

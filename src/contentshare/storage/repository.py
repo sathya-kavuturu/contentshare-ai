@@ -135,6 +135,39 @@ class Repository:
             conn.execute("UPDATE users SET last_login = ? WHERE name = ?", (_now(), name))
             self._audit(conn, name, "signed_in", None, {})
 
+    # --- what the smart reader may learn from ---------------------------------
+    def add_example(self, email_id: int, text: str, is_request: bool, folders: list[str]) -> None:
+        """Keep what the person decided about an email (one entry per email; the last decision
+        wins). Only the cleaned start of the email is kept, as in the email table."""
+        with self.db.transaction() as conn:
+            conn.execute(
+                "INSERT INTO smart_examples (email_id, text, is_request, folders_json, created_at) "
+                "VALUES (?, ?, ?, ?, ?) ON CONFLICT(email_id) DO UPDATE SET "
+                "is_request = excluded.is_request, folders_json = excluded.folders_json, "
+                "created_at = excluded.created_at",
+                (email_id, text[:2400], int(is_request), json.dumps(folders), _now()),
+            )
+
+    def recent_examples(self, limit: int) -> list[dict[str, Any]]:
+        with self.db.read() as conn:
+            return [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT text, is_request, folders_json FROM smart_examples "
+                    "ORDER BY id DESC LIMIT ?",
+                    (limit,),
+                )
+            ]
+
+    def clear_examples(self) -> int:
+        with self.db.transaction() as conn:
+            return conn.execute("DELETE FROM smart_examples").rowcount
+
+    def set_email_department(self, email_id: int, department: str) -> None:
+        with self.db.transaction() as conn:
+            conn.execute("UPDATE emails SET department = ? WHERE id = ?", (department, email_id))
+            self._audit(conn, "system", "department_assigned", None, {"email_id": email_id})
+
     # --- emails ----------------------------------------------------------------
     def is_processed(self, gmail_message_id: str) -> bool:
         with self.db.read() as conn:

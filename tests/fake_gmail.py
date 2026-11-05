@@ -199,7 +199,11 @@ class _Messages:
     def _matches(self, message: dict[str, Any], q: str) -> bool:
         if "SENT" in message["labelIds"] and "in:sent" not in q:
             pass  # sent mail is still listed unless the query says otherwise
-        senders = re.search(r"from:\(([^)]*)\)", q)
+        senders = re.search(r"(?<![-\w])from:\(([^)]*)\)", q)
+        for excluded_senders in re.findall(r"-from:\(([^)]*)\)", q):
+            tokens = [t for t in re.split(r"\s+OR\s+", excluded_senders.strip()) if t]
+            if any(t in self._from_address(message) for t in tokens):
+                return False
         if senders:
             tokens = [t for t in re.split(r"\s+OR\s+", senders.group(1).strip()) if t]
             sender = self._from_address(message)

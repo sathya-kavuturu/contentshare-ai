@@ -171,6 +171,17 @@ MIGRATIONS: list[str] = [
         last_login TEXT
     );
     """,
+    # --- v7: what the person decided about emails the smart reader read (shown as examples) ---
+    """
+    CREATE TABLE smart_examples (
+        id           INTEGER PRIMARY KEY,
+        email_id     INTEGER NOT NULL UNIQUE,
+        text         TEXT NOT NULL,
+        is_request   INTEGER NOT NULL,
+        folders_json TEXT NOT NULL DEFAULT '[]',
+        created_at   TEXT NOT NULL
+    );
+    """,
 ]
 
 

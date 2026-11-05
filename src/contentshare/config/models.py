@@ -335,6 +335,21 @@ class GmailSettings(BaseModel):
         return [v.strip().lower() for v in values if v.strip()]
 
 
+class SmartSettings(BaseModel):
+    """Reading requests from senders that are in no department, with a small language model that
+    runs on this PC (nothing is sent anywhere). Everything it finds is checked against the
+    storage server and always waits for the person's approval."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    model: Literal["recommended", "small"] = "recommended"
+    use_graphics_card: bool = False  # the Vulkan build, for a graphics card with 2 GB or more
+    learn: bool = True  # keep the person's corrections to show the model as examples
+    max_per_check: Annotated[int, Field(ge=1, le=100)] = 20  # messages the model reads per check
+    keep_loaded_minutes: Annotated[int, Field(ge=1, le=120)] = 10  # then it is stopped, freeing RAM
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -349,6 +364,7 @@ class AppConfig(BaseModel):
     parsing: ParsingSettings = Field(default_factory=ParsingSettings)
     index: IndexSettings = Field(default_factory=IndexSettings)
     gmail: GmailSettings = Field(default_factory=GmailSettings)
+    smart: SmartSettings = Field(default_factory=SmartSettings)
     appearance: Literal["system", "light", "dark"] = "system"  # follow Windows, or force one
     # Window layout the person chose (remembered, never needed for anything to work)
     user_name: str = ""  # who is using the app (asked when it opens); shown in the History

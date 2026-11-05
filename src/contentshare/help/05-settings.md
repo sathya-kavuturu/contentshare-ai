@@ -97,6 +97,23 @@ senders are ever read. Use **Add…**, **Edit…** (or double-click) and **Remov
 | **Look back** | How many days of mail a check looks through. |
 | **Emails per check** | The most emails read in one check. |
 
+## Smart reading
+
+Reads requests from people who are **not** in any department, with a small language model that runs
+on this PC. Nothing is sent anywhere. It finds the folder names in the email, each name is looked up
+on the storage server, and everything it finds waits for you: choose the department, check the names,
+then approve. See [Smart reading](help:smart) for how it works.
+
+| Setting | What it does |
+|---|---|
+| **Read emails from senders that are not in a department** | The on/off switch. Off: only mail from the senders you listed in a department is read. On: recent mail in your main inbox is also read (automatic senders such as no-reply are left out). |
+| **Model** | **Qwen3 4B** (about 2.5 GB) gives the best results; **Qwen3 1.7B** (about 1.8 GB) is smaller and faster but less exact. Both are open-source (Apache License 2.0). |
+| **Use the graphics card (faster; needs one with 2 GB or more)** | Runs the model on the graphics card. Leave it off if the PC has no separate graphics card or if reading fails. |
+| **Learn from my approvals and rejections** | Keeps what you decided about these emails and shows the most similar ones to the model as examples. It does not train anything. **Forget what it learned** deletes them. |
+| **Read at most** | How many emails the model reads in one check. The rest wait for the next check. |
+| **Stop the model after** | The model is stopped after this many idle minutes so it gives its memory back. |
+| **Download…** | Downloads the model and the program that runs it once, and checks each file before it is used. **Try it on an email…** shows what it finds in an email you paste. |
+
 ## Matching and copying
 
 | Setting | What it does |

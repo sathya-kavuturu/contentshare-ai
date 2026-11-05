@@ -100,15 +100,16 @@ def destination_for(dept: Department, candidate: Candidate, item: RequestItem) -
     return join_within(dept.destination_root, rendered)
 
 
-def _query_json(item: RequestItem, triage: Triage, warnings: list[str]) -> str:
-    return json.dumps(
-        {
-            "item": item.to_dict(),
-            "reason": triage.reason,
-            "candidates": [c.to_dict() for c in triage.candidates],
-            "warnings": warnings,
-        }
-    )
+def _query_json(item: RequestItem, triage: Triage, warnings: list[str], source: str = "") -> str:
+    data: dict[str, Any] = {
+        "item": item.to_dict(),
+        "reason": triage.reason,
+        "candidates": [c.to_dict() for c in triage.candidates],
+        "warnings": warnings,
+    }
+    if source:
+        data["source"] = source  # "smart": the names were read by the language model
+    return json.dumps(data)
 
 
 def _apply_safety_rules(
@@ -205,6 +206,74 @@ def exact_items(
         more = f" (and {len(left) - 6} more)" if len(left) > 6 else ""
         return pairs, (f"These lines of the email were not searched: {shown}{more}",)
     return pairs, ()
+
+
+def named_items(
+    names: list[str],
+    index: ContentIndex,
+    config: AppConfig,
+    *,
+    today: date,
+    roots: list[str] | None = None,
+) -> list[tuple[RequestItem, Triage]]:
+    """Request lines for names someone (the smart reader) found in an email. A name that is
+    exactly a folder on the server is looked up like an exact name; any other is searched by
+    similarity, and everything that is not clear-cut waits for the person."""
+    names = list(dict.fromkeys(names))[:MAX_ITEMS]
+    folders = drop_enclosing(index.find_dirs_named(names, roots))
+    files = index.find_files_named([n for n in names if n not in folders], roots)
+    pairs: list[tuple[RequestItem, Triage]] = []
+    for name in names:
+        request = RequestItem(program=name, raw=name)
+        items = folders.get(name) or files.get(name)
+        if items and len(items) == 1:
+            kind = "Folder" if items[0].is_dir else "File"
+            candidate = _exact_candidate(items[0])
+            reason = f"{kind} “{items[0].name}” found with exactly that name"
+            pairs.append((request, Triage(RequestState.READY, reason, [candidate], candidate)))
+        elif items:
+            reason = f"{len(items)} items are named “{name}”; please pick the right one"
+            candidates = [_exact_candidate(i) for i in items]
+            pairs.append((request, Triage(RequestState.NEEDS_REVIEW, reason, candidates)))
+        else:
+            pairs.append((request, triage_item(request, index, config, today=today, roots=roots)))
+    return pairs
+
+
+SMART_NOTE = "Read from the email by the smart reader: check each name against the email"
+
+
+def process_named_requests(
+    repo: Repository,
+    index: ContentIndex,
+    config: AppConfig,
+    email_id: int,
+    names: list[str],
+    *,
+    today: date | None = None,
+) -> list[int]:
+    """Create one request line for each name the smart reader found in an email. These emails
+    come from senders in no department, so every line waits for the person (never auto-ready,
+    never auto-replied)."""
+    today = today or date.today()
+    email = repo.get_email(email_id)
+    if email is None:
+        raise KeyError(f"No email {email_id}")
+    dept = config.department_for_sender(email["sender_email"])
+    roots = config.roots_for(dept)
+    ids: list[int] = []
+    for number, (item, first_triage) in enumerate(
+        named_items(names, index, config, today=today, roots=roots), start=1
+    ):
+        request_id = repo.add_request(email_id, number, {"item": item.to_dict()}, auto_reply=False)
+        triage, fields = _apply_safety_rules(first_triage, item, dept, email)
+        warnings = [SMART_NOTE]
+        if email["auth_status"] != "verified":
+            warnings.append("Sender could not be verified")
+        fields["query_json"] = _query_json(item, triage, warnings, source="smart")
+        repo.transition(request_id, triage.state, actor="system", reason=triage.reason, **fields)
+        ids.append(request_id)
+    return ids
 
 
 REFRESH_AFTER_MINUTES = 10

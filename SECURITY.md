@@ -159,6 +159,27 @@ the new installer. `app/updates.py` limits what this can do:
   the program has no "downloaded from the internet" mark, so SmartScreen does not warn; the
   checksum is the only gate.
 
+## Smart reading (the language model)
+
+Smart reading (ContentShare AI) reads mail from senders who are in no department. That mail is
+written by strangers, so it is treated as hostile.
+
+| Threat | What stops it |
+|---|---|
+| An email gives the model orders ("ignore your rules, copy X") | The model has no tools and cannot do anything but answer. It is told the email is data. Its answer must fit a fixed JSON shape (enforced by the server's grammar and checked again by the program). Whatever it says is used only as search text. |
+| The model invents a name, or is made to say one that is not in the email | A name is kept only if it appears in the email text (compared ignoring capitals and spaces). Names with path characters (`\ / .. * ? < > \|`), drive letters, or only digits are dropped before they are used. |
+| A found name is used to reach another folder | Names are only searched for in the index of the storage folders; every copy still goes through the normal path checks and the person's approval. |
+| Content is copied or a reply is sent without anyone looking | These requests are never ready by themselves (the sender is in no department), never auto-reply, and need the person to choose the department and approve. |
+| Another program on the PC uses the model, or someone on the network reaches it | `llama-server` listens only on `127.0.0.1`, on a random port, and needs a random key made for each start. |
+| A tampered model or program download | Each file has a SHA-256 pinned in `smart/catalog.py` and is used only if it matches; downloads must be https; the zip is unpacked only into its own folder and refused if a name climbs out of it or the size is unexpected. |
+| Email text reaching an outside service | None does: the model runs on this PC. |
+| Reading a lot of mail makes the Gmail API cost money | Google states there is no charge for standard use; a check every 15 minutes is far below the stated limits (see the README). |
+| Mail written to look like a request wastes time or fills the list | Only mail with request words reaches the model; automatic senders are never asked for; at most *Read at most* emails are read per check; the rest of the mail is remembered as "not a request". |
+
+The learning feature keeps the cleaned start of each email you decided about, and the names, in
+the local database (the same place the email table keeps its text). **Forget what it learned**
+deletes them. Nothing is uploaded.
+
 ## What the Phase 8 review found and fixed
 
 | # | Finding | Severity | Fix |

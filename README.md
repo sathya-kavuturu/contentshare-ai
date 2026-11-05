@@ -1,7 +1,12 @@
-# ContentShare
+# ContentShare AI
 
-A Windows app that turns department content-request emails into verified copies and replies in
-the same email thread. **Nothing is copied or sent until you click Approve.**
+A Windows app that turns content-request emails into verified copies and replies in the same
+email thread. **Nothing is copied or sent until you click Approve.**
+
+ContentShare AI is [ContentShare](https://github.com/sathya-kavuturu/content-sharing) plus
+**smart reading**: it can also find requests from senders who are in no department, using a small
+open-source language model that runs on your own PC. It installs beside the original ContentShare
+(its own settings, history and Gmail sign-in), so you can try both.
 
 1. A department emails the name of a program.
 2. ContentShare finds it on the storage server.
@@ -10,12 +15,16 @@ the same email thread. **Nothing is copied or sent until you click Approve.**
    replies to the sender.
 
 > Status: built and tested against invented data and a fake Gmail. **It has not yet been used with
-> a real mailbox or storage server**, so start in dry-run mode (see below).
+> a real mailbox or storage server**, so start in dry-run mode (see below). Smart reading is
+> described, with its limits, in [its own section](#smart-reading-requests-from-unknown-senders).
+> It was run end to end with the real Qwen3 1.7B model and the real llama.cpp download (3 to 8
+> seconds per email on a CPU), but not yet with the recommended 4B model or on a graphics card,
+> and not on real emails.
 
 ## Install
 
 Download `ContentShare-Setup-<version>.exe` from the
-[Releases](https://github.com/sathya-kavuturu/content-sharing/releases/latest) page and run it.
+[Releases](https://github.com/sathya-kavuturu/contentshare-ai/releases/latest) page and run it.
 It installs for the current user only and needs no administrator password. The installer is not
 code-signed, so Windows may warn: choose **More info → Run anyway**, and check the file against
 `SHA256SUMS.txt` from the same release.
@@ -61,6 +70,54 @@ built into the app (**Help** in the menu) and works offline.
   show **counts only**, never email text. Looks for a newer version when it starts and installs
   it only when you press Update.
 * **Never destructive.** The app never deletes or changes anything on the storage server.
+
+## Smart reading: requests from unknown senders
+
+Without it, only mail from the senders you list in a department is read. Turn on **Settings →
+Smart reading** and ContentShare AI also reads recent mail in your main inbox from anyone else
+(mail you sent and automatic senders such as no-reply are left out), works out whether it asks for
+content, and pulls out the folder names.
+
+**How an email is read**
+
+1. *Rules first, no model.* If lines of the email are exactly the names of folders on the storage
+   server, it is a request.
+2. *The model.* Otherwise, if the email contains words that ask for something, a small language
+   model answers in a fixed JSON shape: is it a request, and which names does it give? Names that
+   are not really written in the email are thrown away, as are names that look like paths or
+   patterns. Newsletters, invoices and questions are remembered as "not a request".
+3. *Look up.* Every name is searched on the storage server.
+4. *You decide.* These requests always wait for you: press **Choose department…**, check the
+   names (a note says they were read by the smart reader), choose the folders, approve. Nothing is
+   ready, copied or answered by itself.
+
+**Safety.** Mail from strangers is untrusted input. The model has no tools: it cannot copy, send or
+open anything, and its answer is only ever used as search text. Everything runs on this PC; email
+text is never sent to an AI service. The program that runs the model listens only on `127.0.0.1`
+and needs a random key.
+
+**The model.** Recommended: **Qwen3 4B** (`Qwen3-4B-Q4_K_M.gguf`, about 2.5 GB, Apache License 2.0).
+Smaller option: **Qwen3 1.7B** (`Qwen3-1.7B-Q8_0.gguf`, about 1.8 GB, Apache License 2.0). It is
+run by **llama.cpp** (build `b12086`, MIT licence). Only licences that allow use inside an
+organisation (Apache-2.0, MIT) are used; models with research-only or community licences are left
+out. The files are downloaded from inside the app (**Download…**) and each one is checked against
+a SHA-256 pinned in the program before it is used.
+
+**Your PC.** 8 GB of memory or more (the model needs about 3 GB while it reads and is stopped again
+after 10 idle minutes), about 3 GB of disk, no graphics card needed. A graphics card with 2 GB or
+more makes it faster (tick **Use the graphics card**; it uses llama.cpp's Vulkan build).
+
+**Gmail cost and limits.** Google states that standard use of the Gmail API has no charge. The
+limits are 6,000 quota units per user per minute and an 80,000,000-unit daily threshold;
+listing mail costs 5 units and reading a message 20 (60 when the full message is read, as here). A
+check every 15 minutes (96 a day) reading even 50 new messages each time stays far below both. Google
+says charges for going above the quota are planned for later in 2026.
+
+**Learning.** What you approve, skip or reject is kept on this PC. When the model reads a
+similar email later, the most similar earlier ones are shown to it as examples. This changes its
+answers at once; nothing is trained. **Forget what it learned** deletes them. With enough
+decisions saved (a few hundred), a small classifier could be trained to decide which emails are
+worth the model's time: that is not built yet.
 
 ## Copy integrity: how a corrupted file is prevented
 

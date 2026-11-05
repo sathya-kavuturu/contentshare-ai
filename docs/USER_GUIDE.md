@@ -110,6 +110,20 @@ original.
 
 To see more requests at once, press **Collapse all**, or the small arrow on one card.
 
+### Requests from people who are in no department (smart reading)
+
+Turn on **Settings → Smart reading**, press **Save settings**, then **Download…** (once; about
+2.5 GB). From then on a check also reads recent mail in your main inbox from other people.
+
+* If lines of the email are exactly the names of folders on the storage server, or the small
+  language model on your PC finds names in it, you get a card like any other. A yellow note says
+  *Read from the email by the smart reader: check each name against the email*.
+* The card says **not in any department**. Press **Choose department…**, then choose the folders
+  and approve as usual. **Add a folder…** works after you have chosen the department.
+* Mail that is not a request (newsletters, invoices, questions) is not shown. **Try it on an
+  email…** (in the same settings tab) shows what the model makes of an email you paste.
+* Nothing is copied or sent by itself, and nothing leaves your PC.
+
 ## 5. Copying
 
 ![Active copies](screenshots/active-copies.png)

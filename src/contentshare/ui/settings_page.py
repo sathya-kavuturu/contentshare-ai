@@ -39,6 +39,7 @@ from contentshare.config.templates import REPLY_PLACEHOLDERS, SUBFOLDER_PLACEHOL
 from contentshare.ui.context import UiContext
 from contentshare.ui.folder_list import FolderList
 from contentshare.ui.pickers import choose_file, choose_folder
+from contentshare.ui.smart_box import SmartBox
 from contentshare.ui.telegram_box import TelegramBox
 from contentshare.ui.timefmt import local_stamp
 from contentshare.ui.widgets import Combo, page_header
@@ -263,6 +264,7 @@ class SettingsPage(QWidget):
         self._build_general()
         self._build_departments()
         self._build_gmail()
+        self._build_smart()
         self._build_matching()
         self._build_index()
         bar = QHBoxLayout()
@@ -490,6 +492,11 @@ class SettingsPage(QWidget):
         note.setProperty("role", "muted")
         form.addRow("", note)
 
+    def _build_smart(self) -> None:
+        form = self._tab("Smart reading")
+        self.smart_box = SmartBox(self.ctx)
+        form.addRow(self.smart_box)
+
     def _build_matching(self) -> None:
         form = self._tab("Matching and copying")
         self.ready_score = QSpinBox()
@@ -575,6 +582,7 @@ class SettingsPage(QWidget):
         self.to_tray.setChecked(c.schedule.close_to_tray)
         self.notify.setChecked(c.schedule.notifications)
         self.telegram_box.load(c)
+        self.smart_box.load(c)
         self.start_login.setChecked(c.schedule.start_with_windows)
         self.auto_default.setChecked(c.auto_reply_default)
         self.dry_run.setChecked(c.dry_run)
@@ -611,6 +619,7 @@ class SettingsPage(QWidget):
             start_with_windows=self.start_login.isChecked(),
         )
         base["telegram"] = self.telegram_box.values()
+        base["smart"] = self.smart_box.values()
         base["appearance"] = self._appearance()
         base["auto_reply_default"] = self.auto_default.isChecked()
         base["dry_run"] = self.dry_run.isChecked()
@@ -667,6 +676,7 @@ class SettingsPage(QWidget):
         self.message.setText(f"Settings saved. {problem}".strip())
         self.ctx.say("Settings saved")
         self._refresh_status()
+        self.smart_box.refresh_status()
         self.saved.emit()
         return True
 

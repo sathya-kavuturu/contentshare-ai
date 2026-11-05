@@ -6,6 +6,13 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Smart reading (ContentShare AI).** Mail from senders who are in no department can now be read
+  with a small open-source language model that runs on the PC (Qwen3 4B or 1.7B, Apache-2.0,
+  through llama.cpp, MIT). Rules look for exact folder names first; the model is asked only for
+  mail that asks for something; every name it gives must really be in the email and is looked up
+  on the storage server. These requests always wait: press *Choose department...*, check, approve.
+  Downloads are pinned by SHA-256. What you decide is kept as examples for the model. This copy
+  installs beside the original ContentShare (own data folder, credentials and installer id).
 - **Add a folder to the same request.** Every card has an *Add a folder...* button, with or without
   unsearched text. Browse for any folder or file and pick it, or type a name (or click a line of the
   email that was not searched) and choose the match. It becomes one more section of the same request

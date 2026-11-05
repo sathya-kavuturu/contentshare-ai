@@ -89,6 +89,10 @@ ContentShare asks for **`gmail.modify` + `gmail.send`** by default, or **`gmail.
 database already makes sure no email is processed twice. If you would rather give it less
 access, turn labels off and reconnect. It does not request full access to your mailbox.
 
+**Smart reading needs no extra permission**, but it reads more mail: recent mail in the main inbox
+from senders who are in no department (see the README). Gmail API use has no charge today
+(Google's quota page, section "Pricing"); a check every 15 minutes is far below the limits.
+
 ## About sender checks
 
 An email is trusted as coming from the right person only if Gmail recorded that the sender

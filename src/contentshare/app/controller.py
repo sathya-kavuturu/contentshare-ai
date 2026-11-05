@@ -27,7 +27,7 @@ from contentshare.app.telegram import TelegramError, TelegramNotifier, alert_tex
 from contentshare.app.users import UserError, UserStore
 from contentshare.app.users import clean_name as clean_user_name
 from contentshare.config.models import AppConfig, Department
-from contentshare.config.store import save_config
+from contentshare.config.store import data_dir, save_config
 from contentshare.copy_engine import (
     PreflightError,
     Progress,
@@ -57,6 +57,9 @@ from contentshare.matching.service import destination_for
 from contentshare.parsing.dates import date_phrases
 from contentshare.parsing.request import RequestItem, parse_request
 from contentshare.security.paths import PathSafetyError, resolve_within
+from contentshare.smart.reader import SmartReader
+from contentshare.smart.runtime import Installer, Runtime, SmartError, Status
+from contentshare.smart.schema import Reading
 from contentshare.storage.repository import Repository
 
 log = logging.getLogger(__name__)
@@ -146,6 +149,7 @@ class RequestView:
     gmail_thread_id: str
     gmail_message_id: str
     copy_seconds: float | None = None  # how long the last copy of it took, if one finished
+    smart: bool = False  # the names were read from the email by the language model
     approved_by: str = ""  # the Windows user who approved it ("" until someone does)
 
     @property
@@ -279,6 +283,7 @@ def make_view(row: dict[str, Any]) -> RequestView:
         gmail_message_id=str(row.get("gmail_message_id") or ""),
         copy_seconds=_seconds(row.get("copy_seconds")),
         approved_by=str(row.get("approved_by") or ""),
+        smart=detail.get("source") == "smart",
     )
 
 
@@ -335,8 +340,11 @@ class Controller:
         config_path: Path | None = None,
         today: Callable[[], date] = date.today,
         telegram: TelegramNotifier | None = None,
+        llm_root: Path | None = None,
     ) -> None:
         self.repo, self.index, self.config = repo, index, config
+        self._llm_root = llm_root  # where the model and its program are kept (None: AppData)
+        self._smart: Runtime | None = None
         self.telegram = telegram or TelegramNotifier()  # touches nothing until an alert is sent
         self._gateway_factory, self.auth = gateway_factory, auth
         self._config_path, self._today = config_path, today
@@ -428,9 +436,12 @@ class Controller:
         for dept in self.config.departments:
             if dept.name == name:
                 return dept
-        raise ActionError(
-            f"“{name or 'Unknown'}” is not a department in the settings; add it first"
-        )
+        if name is None:
+            raise ActionError(
+                "This sender is in no department yet. Press “Choose department…” on the "
+                "request first."
+            )
+        raise ActionError(f"“{name}” is not a department in the settings; add it first")
 
     def _transition(self, request_id: int, target: RequestState, **kwargs: Any) -> None:
         self._require_sign_in()
@@ -454,6 +465,8 @@ class Controller:
         email = self.repo.get_email(email_id)
         if email is None:
             raise ActionError("This request no longer exists")
+        if not email.get("department"):
+            raise ActionError("Choose the department for this request first (Choose department…)")
         if self._department_or_none(email.get("department")) is None:
             raise ActionError("This sender's department is not in the settings; add it first")
         number = max((r["line_no"] for r in self.repo.requests_of_email(email_id)), default=0) + 1
@@ -711,10 +724,12 @@ class Controller:
 
     def skip(self, request_id: int) -> None:
         self._transition(request_id, S.SKIPPED, reason="skipped by the user")
+        self._learn_dismissed(int(self._row(request_id)["email_id"]))
         self._emit("changed", request_id)
 
     def reject(self, request_id: int, reason: str = "") -> None:
         self._transition(request_id, S.REJECTED, reason=reason.strip()[:200] or "rejected")
+        self._learn_dismissed(int(self._row(request_id)["email_id"]))
         self._emit("changed", request_id)
 
     def set_auto_reply_group(self, email_id: int, enabled: bool) -> None:
@@ -730,6 +745,7 @@ class Controller:
             raise ActionError("Nothing in this request can be skipped any more")
         for request_id in ids:
             self._transition(request_id, S.SKIPPED, reason="skipped by the user")
+        self._learn_dismissed(email_id)
         self._emit("changed", ids[0])
         return ids
 
@@ -740,6 +756,7 @@ class Controller:
             raise ActionError("Nothing in this request can be rejected any more")
         for request_id in ids:
             self._transition(request_id, S.REJECTED, reason=reason.strip()[:200] or "rejected")
+        self._learn_dismissed(email_id)
         self._emit("changed", ids[0])
         return ids
 
@@ -779,6 +796,7 @@ class Controller:
             request_id, S.APPROVED, reason="approved by the user", auto_reply=row["auto_reply"]
         )
         self._submit(request_id)
+        self._learn_accepted(int(row["email_id"]))
         self._emit("changed", request_id)
         return ApproveResult(started=True, note=note)
 
@@ -978,7 +996,10 @@ class Controller:
                 gateway = self._gateway_factory()
             except AuthRequiredError:
                 return IntakeReport(needs_sign_in=True)
-            service = IntakeService(gateway, self.repo, self.index, self.config, today=self._today)
+            service = IntakeService(
+                gateway, self.repo, self.index, self.config, today=self._today,
+                reader=self._reader(),
+            )  # fmt: skip
             report = service.check_now(refresh_index=refresh_index, should_stop=should_stop)
         finally:
             self._check_lock.release()
@@ -1196,6 +1217,8 @@ class Controller:
             self.index.forget_root(root)
         self.config = config
         self.index.settings = config.index
+        if self._smart is not None:
+            self._smart.update(config.smart)
         self.queue.shutdown()
         self.queue = CopyQueue(
             CopyJobRunner(self.repo, config), concurrency=config.copy_options.concurrency
@@ -1204,6 +1227,106 @@ class Controller:
 
     def set_dry_run(self, enabled: bool) -> None:
         self.apply_config(self.config.model_copy(update={"dry_run": enabled}))
+
+    # ------------------------------------------------------------------ smart reading
+    def smart_runtime(self) -> Runtime:
+        """The local model (created when first needed; it is only started when it reads mail)."""
+        if self._smart is None:
+            root = self._llm_root or (data_dir() / "llm")
+            self._smart = Runtime(
+                Installer(root), self.config.smart, log_file=root.parent / "logs" / "llm.log"
+            )
+        return self._smart
+
+    def _reader(self) -> SmartReader | None:
+        if not self.config.smart.enabled:
+            return None
+        return SmartReader(self.smart_runtime(), self.repo, self.config.smart)
+
+    def smart_status(self) -> Status:
+        return self.smart_runtime().installer.status(self.config.smart)
+
+    def smart_install(
+        self,
+        progress: Callable[[str, int, int], None] | None = None,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> None:
+        """Download the model and its program (large: run it off the GUI thread)."""
+        try:
+            self.smart_runtime().installer.install(
+                self.config.smart, progress=progress, should_stop=should_stop
+            )
+        except SmartError as exc:
+            raise ActionError(str(exc)) from exc
+
+    def smart_test(self, subject: str, body: str) -> Reading:
+        """Read a sample email with the model and show what it finds (nothing is saved)."""
+        reader = SmartReader(self.smart_runtime(), self.repo, self.config.smart)
+        try:
+            return reader.read(subject, body)
+        except SmartError as exc:
+            raise ActionError(str(exc)) from exc
+
+    def smart_forget_examples(self) -> int:
+        """Delete everything the smart reader has learned from the person's decisions."""
+        return self.repo.clear_examples()
+
+    def assign_department(self, email_id: int, name: str) -> None:
+        """An email from a sender in no department: say which department it is for. Its folders
+        are then chosen the usual way and copied to that department's folder."""
+        self._require_sign_in()
+        email = self.repo.get_email(email_id)
+        if email is None:
+            raise ActionError("This request no longer exists")
+        if email.get("department"):
+            raise ActionError("This request already belongs to a department")
+        dept = self._department(name)
+        self.repo.set_email_department(email_id, dept.name)
+        self._emit("changed")
+
+    def _remember(self, email_id: int, is_request: bool, folders: list[str]) -> None:
+        email = self.repo.get_email(email_id)
+        if email is None:
+            return
+        text = f"Subject: {email.get('subject') or ''}\n\n{email.get('snippet') or ''}"
+        self.repo.add_example(email_id, text, is_request, folders)
+
+    def _smart_lines(self, email_id: int) -> list[dict[str, Any]]:
+        rows = self.repo.requests_of_email(email_id)
+        smart = []
+        for row in rows:
+            try:
+                if json.loads(row.get("query_json") or "{}").get("source") == "smart":
+                    smart.append(row)
+            except ValueError:
+                continue
+        return smart
+
+    def _learn_accepted(self, email_id: int) -> None:
+        """The person approved a folder the model found: remember the names it got right."""
+        if not self.config.smart.learn:
+            return
+        names = []
+        for row in self._smart_lines(email_id):
+            if row["state"] in ("APPROVED", "COPYING", "VERIFIED", "REPLIED"):
+                item = json.loads(row["query_json"]).get("item", {})
+                if item.get("program"):
+                    names.append(str(item["program"]))
+        if names:
+            self._remember(email_id, True, names)
+
+    def _learn_dismissed(self, email_id: int) -> None:
+        """The person skipped or rejected everything the model found: it was not a request."""
+        if not self.config.smart.learn:
+            return
+        smart = self._smart_lines(email_id)
+        everything = self.repo.requests_of_email(email_id)
+        if (
+            smart
+            and len(smart) == len(everything)
+            and all(r["state"] in ("SKIPPED", "REJECTED") for r in smart)
+        ):
+            self._remember(email_id, False, [])
 
     # ------------------------------------------------------------------ history
     def export_history(self, path: Path, views: Iterable[RequestView] | None = None) -> int:
@@ -1229,3 +1352,5 @@ class Controller:
     def shutdown(self) -> None:
         """Stop cleanly: running copies are cancelled and resume next time."""
         self.queue.shutdown(cancel=True)
+        if self._smart is not None:
+            self._smart.stop()
