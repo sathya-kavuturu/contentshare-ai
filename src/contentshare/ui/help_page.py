@@ -72,19 +72,19 @@ def load_topics(folder: Path = HELP_DIR) -> list[Topic]:
 def help_css(t: Theme) -> str:
     """How the Markdown is drawn: the same colours and sizes as the rest of the program."""
     return f"""
-    body {{ color: {t.text}; font-size: 13px; }}
+    body {{ color: {t.text}; font-size: 14px; }}
     h1 {{ font-size: 24px; font-weight: 600; color: {t.text}; margin-top: 0; margin-bottom: 6px; }}
     h2 {{ font-size: 17px; font-weight: 600; color: {t.text}; margin-top: 22px;
         margin-bottom: 4px; }}
     h3 {{ font-size: 14px; font-weight: 600; color: {t.text}; margin-top: 16px; }}
-    p, li {{ color: {t.text}; font-size: 13px; }}
+    p, li {{ color: {t.text}; font-size: 14px; }}
     li {{ margin-bottom: 3px; }}
     a {{ color: {t.link}; text-decoration: none; }}
-    code {{ font-family: {MONO_STACK}; font-size: 12px; background-color: {t.window};
+    code {{ font-family: {MONO_STACK}; font-size: 13px; background-color: {t.window};
         color: {t.text}; }}
     em {{ color: {t.muted}; }}
     table {{ border-color: {t.border}; border-collapse: collapse; }}
-    th {{ background-color: {t.window}; color: {t.muted}; font-size: 12px; font-weight: 600;
+    th {{ background-color: {t.window}; color: {t.muted}; font-size: 13px; font-weight: 600;
         padding: 6px 10px; }}
     td {{ padding: 6px 10px; border-color: {t.border}; }}
     """

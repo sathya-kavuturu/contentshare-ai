@@ -267,3 +267,13 @@ def test_a_long_warning_does_not_widen_the_card(rig: Rig, qtbot: Any) -> None:  
     chip = _chip("⚠ " + "These lines of the email were not searched; " * 12, "warn")
     _note_row(chip)
     assert chip.wordWrap() and chip.minimumSizeHint().width() < 400
+
+
+def test_settings_keep_the_copy_by_itself_choice(rig: Rig) -> None:  # noqa: F811
+    _go(rig, "Settings")
+    page = rig.window.settings
+    assert not page.auto_copy.isChecked()
+    page.auto_copy.setChecked(True)
+    assert page.has_unsaved()
+    page.save()
+    assert rig.controller.config.auto_copy_certain

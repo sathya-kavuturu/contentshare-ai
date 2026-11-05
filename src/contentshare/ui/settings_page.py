@@ -415,6 +415,14 @@ class SettingsPage(QWidget):
         self.dry_run = QCheckBox(
             "Dry-run mode: check everything, but copy nothing and send nothing"
         )
+        self.auto_copy = QCheckBox(
+            "Copy and reply by itself when a request is Ready and 100% matched (no approval needed)"
+        )
+        self.auto_copy.setToolTip(
+            "Only a request from a verified sender that is Ready and matched at exactly 100% "
+            "is handled this way. Everything else still waits for you."
+        )
+        form.addRow("", self.auto_copy)
         form.addRow("", self.auto_default)
         form.addRow("", self.dry_run)
         self._build_updates_and_content(form)
@@ -637,6 +645,7 @@ class SettingsPage(QWidget):
         self.smart_box.load(c)
         self.start_login.setChecked(c.schedule.start_with_windows)
         self.auto_default.setChecked(c.auto_reply_default)
+        self.auto_copy.setChecked(c.auto_copy_certain)
         self.dry_run.setChecked(c.dry_run)
         self.check_updates.setChecked(c.updates.check_on_start)
         self.folders.set_paths(c.source_roots)
@@ -676,6 +685,7 @@ class SettingsPage(QWidget):
         base["smart"] = self.smart_box.values()
         base["appearance"] = self._appearance()
         base["auto_reply_default"] = self.auto_default.isChecked()
+        base["auto_copy_certain"] = self.auto_copy.isChecked()
         base["dry_run"] = self.dry_run.isChecked()
         base["updates"]["check_on_start"] = self.check_updates.isChecked()
         base["source_roots"] = self.folders.paths()

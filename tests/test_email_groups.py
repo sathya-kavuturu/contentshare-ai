@@ -196,7 +196,7 @@ def test_the_buttons_for_the_email_as_a_whole(rig: Rig) -> None:
     rig.window.requests.refresh()
     (card,) = rig.window.requests._cards
     assert _buttons(card, "Skip all") and _buttons(card, "Reject")
-    assert len(_buttons(card, "Skip this folder")) == 3  # and one per folder
+    assert len(_buttons(card, "✕ Cancel folder")) == 3  # and one per folder
 
 
 # --------------------------------------------------------------------------- the whole email

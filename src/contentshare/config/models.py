@@ -381,6 +381,9 @@ class AppConfig(BaseModel):
     sidebar_collapsed: bool = False  # the menu on the left folded to icons
     compact_requests: bool = False  # request cards folded to one short line
     auto_reply_default: bool = False
+    # Off: every request waits for a person to approve it. On: a request that is Ready and matched
+    # at 100% from a verified sender is copied, verified and answered without anyone approving.
+    auto_copy_certain: bool = False
     # Rehearsal: approving checks everything (paths, space, names) and reports what would be
     # copied, but nothing is copied and no email is sent.
     dry_run: bool = False

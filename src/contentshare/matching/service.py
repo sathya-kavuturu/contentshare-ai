@@ -192,14 +192,11 @@ def exact_items(
     if found_only and not any(t.state == RequestState.READY or t.candidates for _, t in pairs):
         return [], ()  # nothing on the server has any of the names: not a list of folder names
     if not pairs:
-        text = (subject.strip() or "(no subject)")[:120]
         reason = (
             "No folder name in this email exactly matches a folder in the storage folders. "
             "Browse for the folder yourself."
         )
-        pairs.append(
-            (RequestItem(program=text, raw=text), Triage(RequestState.NEEDS_REVIEW, reason))
-        )
+        pairs.append((RequestItem(program="", raw=""), Triage(RequestState.NEEDS_REVIEW, reason)))
     left = unread_lines(body, [r.program for r, _ in pairs])
     if left:
         shown = "; ".join(f"“{line[:80]}”" for line in left[:6])

@@ -189,8 +189,8 @@ class RequestCard(QFrame):
     def _build(self) -> None:
         v, group = self.view, self.group
         root = self._root = QVBoxLayout(self)
-        root.setContentsMargins(18, 16, 18, 16)
-        root.setSpacing(10)
+        root.setContentsMargins(20, 18, 20, 18)
+        root.setSpacing(12)
 
         self._build_head(root)
 
@@ -198,7 +198,7 @@ class RequestCard(QFrame):
         self.details = QWidget()
         body = QVBoxLayout(self.details)
         body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(10)
+        body.setSpacing(12)
         root.addWidget(self.details)
 
         who = f"{v.sender_name} · {v.sender_email}" if v.sender_name else v.sender_email
@@ -254,7 +254,7 @@ class RequestCard(QFrame):
         if group.many:
             title_text = f"{v.subject.strip() or 'Request'}  ·  {len(group.items)} folders"
         else:
-            title_text = v.requested or "(nothing recognised)"
+            title_text = v.requested or "(no folder name found)"
         title = _label(title_text, "heading", wrap=False)
         head.addWidget(title, 1)
         text, tone = group_status(group)
@@ -303,8 +303,8 @@ class RequestCard(QFrame):
         action = "Show" if collapsed else "Hide"
         self.fold.setToolTip(f"{action} the details of this request")
         self.fold.setAccessibleName(f"{action} details of request {self.view.id}")
-        self._root.setContentsMargins(18, 10 if collapsed else 16, 18, 10 if collapsed else 16)
-        self._root.setSpacing(4 if collapsed else 10)
+        self._root.setContentsMargins(20, 12 if collapsed else 18, 20, 12 if collapsed else 18)
+        self._root.setSpacing(4 if collapsed else 12)
 
     def toggle_collapsed(self) -> None:
         self.set_collapsed(not self.state.collapsed)
@@ -353,9 +353,17 @@ class RequestCard(QFrame):
         if number is not None:
             head = QHBoxLayout()
             head.setSpacing(10)
-            head.addWidget(_label(f"{number}.  {v.requested}", "heading", wrap=False), 1)
+            title = v.requested or "(no folder name found)"
+            head.addWidget(_label(f"{number}.  {title}", "heading", wrap=False), 1)
             style = style_for(v.state)
             head.addWidget(_chip(style.text, style.tone))
+            if v.state in _CAN_SKIP:
+                # on the right of every folder: the app or the model may have got it wrong
+                cancel = _button("✕ Cancel folder", partial(self._skip_item, v))
+                cancel.setFlat(True)
+                cancel.setToolTip("This is not a folder to copy: take it out of this request")
+                self._buttons.append(cancel)
+                head.addWidget(cancel)
             root.addLayout(head)
         if v.reason:
             root.addWidget(_label(v.reason, "muted"))
@@ -367,9 +375,6 @@ class RequestCard(QFrame):
             "COPYING": self._copying_section,
             "VERIFIED": self._verified_section,
         }.get(v.state, self._finished_section)(root, v)
-        if number is not None and v.state in _CAN_SKIP:
-            skip = _button("Skip this folder", partial(self._skip_item, v))
-            self._item_buttons(root, skip, flat=True)
 
     def _review_section(self, root: QVBoxLayout, v: RequestView) -> None:
         choices = v.candidates
@@ -730,7 +735,9 @@ class RequestCard(QFrame):
 
     def _skip_item(self, view: RequestView) -> None:
         answer = QMessageBox.question(
-            self, "Skip folder", f"Skip “{view.requested}”? It will be kept in the history."
+            self,
+            "Cancel folder",
+            f"Cancel “{view.requested or 'this folder'}”? It will be kept in the history.",
         )
         if answer == QMessageBox.StandardButton.Yes:
             try:

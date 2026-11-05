@@ -841,11 +841,18 @@ class Controller:
 
     # ------------------------------------------------------------------ approving and copying
     def approve(
-        self, request_id: int, *, confirmed: bool, acknowledge_unverified: bool = False
+        self,
+        request_id: int,
+        *,
+        confirmed: bool,
+        acknowledge_unverified: bool = False,
+        automatic: bool = False,
     ) -> ApproveResult:
         """Approve a READY request and start copying. Re-checks the source on disk first.
-        In dry-run mode everything is checked and reported but nothing changes."""
-        self._require_sign_in()
+        In dry-run mode everything is checked and reported but nothing changes. ``automatic`` is
+        only for the setting “copy and reply by itself”: nobody is signed in to approve then."""
+        if not automatic:
+            self._require_sign_in()
         if not confirmed:
             raise ActionError("Tick “Confirm copy” first: nothing is copied without it")
         row = self._row(request_id)
@@ -871,13 +878,40 @@ class Controller:
         if self.config.dry_run:
             return self._dry_run(request_id, src, dst, note)
 
-        self._transition(
-            request_id, S.APPROVED, reason="approved by the user", auto_reply=row["auto_reply"]
-        )
+        if automatic:
+            try:
+                self.repo.transition(
+                    request_id, S.APPROVED, actor="automatic",
+                    reason="approved automatically: Ready and matched at 100%", auto_reply=1,
+                )  # fmt: skip
+            except (InvalidTransitionError, PermissionError) as exc:
+                raise ActionError(str(exc)) from exc
+        else:
+            self._transition(
+                request_id, S.APPROVED, reason="approved by the user", auto_reply=row["auto_reply"]
+            )
         self._submit(request_id)
         self._learn_accepted(int(row["email_id"]))
         self._emit("changed", request_id)
         return ApproveResult(started=True, note=note)
+
+    def auto_copy_certain(self) -> list[int]:
+        """With the setting on: copy (and so reply to) every request that is Ready, from a
+        verified sender and matched at exactly 100%. A request that cannot be copied stays Ready
+        for a person. Returns the requests that were started."""
+        if not self.config.auto_copy_certain or self.config.dry_run:
+            return []
+        started: list[int] = []
+        for row in self.repo.list_requests([S.READY]):
+            if row["auth_status"] != "verified" or float(row.get("confidence") or 0) < 100:
+                continue
+            try:
+                self.approve(int(row["id"]), confirmed=True, automatic=True)
+            except ActionError as exc:
+                self.repo.log("automatic", "auto_copy_skipped", int(row["id"]), reason=str(exc))
+                continue
+            started.append(int(row["id"]))
+        return started
 
     def approve_group(
         self, email_id: int, *, confirmed: bool, acknowledge_unverified: bool = False
@@ -1082,6 +1116,9 @@ class Controller:
             report = service.check_now(refresh_index=refresh_index, should_stop=should_stop)
         finally:
             self._check_lock.release()
+        started = self.auto_copy_certain()
+        if started:
+            report.warnings.append(f"{len(started)} request(s) were copied automatically.")
         self._emit("changed")
         self._alert_telegram(report)
         return report

@@ -671,3 +671,39 @@ def test_nothing_is_done_before_signing_in_when_the_app_requires_it(h: Harness) 
     h.ctl.approve(v.id, confirmed=True)  # signed in: allowed
     h.wait_copy(v.id)
     assert h.ctl.view(v.id).approved_by == "Asha"
+
+
+# --------------------------------------------------------------------------- copy by itself
+def _turn_on_auto_copy(h: Harness, on: bool = True) -> None:
+    h.ctl.apply_config(h.ctl.config.model_copy(update={"auto_copy_certain": on}), persist=False)
+
+
+def test_a_certain_ready_request_is_copied_and_answered_without_approval(h: Harness) -> None:
+    v = h.ready()
+    h.world.repo.update_request(v.id, actor="test", reason="exact", confidence=100.0)
+    assert h.ctl.auto_copy_certain() == []  # the setting is off: it waits for a person
+    assert h.ctl.view(v.id).state == "READY"
+    _turn_on_auto_copy(h)
+    assert h.ctl.auto_copy_certain() == [v.id]
+    h.wait_copy(v.id)
+    h.wait_reply(v.id)
+    assert h.ctl.view(v.id).state == "REPLIED" and len(h.world.gmail.sent) == 1
+    assert h.ctl.view(v.id).approved_by == "automatic"
+
+
+def test_a_request_below_100_percent_still_waits_for_a_person(h: Harness) -> None:
+    v = h.ready()
+    h.world.repo.update_request(v.id, actor="test", reason="close", confidence=97.0)
+    _turn_on_auto_copy(h)
+    assert h.ctl.auto_copy_certain() == []
+    assert h.ctl.view(v.id).state == "READY"
+
+
+def test_auto_copy_does_nothing_in_dry_run(h: Harness) -> None:
+    v = h.ready()
+    h.world.repo.update_request(v.id, actor="test", reason="exact", confidence=100.0)
+    h.ctl.apply_config(
+        h.ctl.config.model_copy(update={"auto_copy_certain": True, "dry_run": True}), persist=False
+    )
+    assert h.ctl.auto_copy_certain() == []
+    assert h.ctl.view(v.id).state == "READY"

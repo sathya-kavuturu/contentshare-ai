@@ -18,6 +18,7 @@ which entry and why, and nothing is saved. Settings cannot be saved while a copy
 | **Show pop-up notifications** | Windows pop-ups with counts only, never names, subjects or folders. |
 | **Tell a Telegram group when new requests wait for approval** | Posts one short message to a Telegram group each time a check finds new requests. See *Telegram alerts* below. |
 | **Tick "send the reply automatically" on new requests** | The default for the tick box on each card. The reply is then sent as soon as the copy is verified. Leave it off until you trust the results. |
+| **Copy and reply by itself when a request is Ready and 100% matched** | Off by default. When on, a request from a verified sender that is Ready and matched at exactly 100% is copied, verified and answered without anyone approving it (the reply is sent too). Anything below 100%, or not Ready, still waits for you. Does nothing in dry-run mode. |
 | **Dry-run mode** | Approving checks paths, free space and names and reports what would be copied, but **copies nothing and sends nothing**. A bar across the window reminds you while it is on. |
 | **Storage folders to search** | The folders on the server that hold the programs (see below). |
 | **Default reply text** | The message sent when a copy is verified. Departments can have their own. |
