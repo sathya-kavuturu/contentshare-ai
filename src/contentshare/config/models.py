@@ -87,6 +87,9 @@ class Department(BaseModel):
     # True: when nothing is found in the folders above, the PC's own drives can be searched too
     # (never network drives, and never Windows or Program Files). Off by default.
     search_whole_pc: bool = False
+    # True: when the emails of this department do not contain exact folder names, the local
+    # language model reads them too (only while Settings → Smart reading is on).
+    use_local_llm: bool = False
 
     @property
     def may_pick_anywhere(self) -> bool:

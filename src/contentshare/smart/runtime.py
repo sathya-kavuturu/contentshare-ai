@@ -249,6 +249,12 @@ class Runtime:
             self._arm_idle_timer()
             return _ask(self._port, self._key, messages, schema)
 
+    def start(self) -> None:
+        """Start the model now (it also starts by itself when mail has to be read)."""
+        with self._lock:
+            self._ensure_started()
+            self._arm_idle_timer()
+
     def running(self) -> bool:
         return self._process is not None and self._process.poll() is None
 

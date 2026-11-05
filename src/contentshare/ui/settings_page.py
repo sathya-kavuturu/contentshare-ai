@@ -77,6 +77,11 @@ OWN_FOLDERS_HINT = (
     "The server, drive or folder this department's content is kept in. Only these are searched "
     "for its requests. Leave the list empty to use the storage folders from General."
 )
+LLM_HINT = (
+    "When an email has no lines that are exactly folder names, the model on this PC reads it and "
+    "suggests the names. Works only while Settings → Smart reading is on; if the model cannot "
+    "answer, the usual reading is used. What it answered is written in the History."
+)
 WHOLE_PC_HINT = (
     "When nothing is found in the folders above, you can also search this PC's own drives "
     "(never network drives, Windows or Program Files). It is slower, only suggests matches, and "
@@ -157,6 +162,7 @@ class DepartmentDialog(QDialog):
         form.addRow("Search in", with_hint(self.folders, OWN_FOLDERS_HINT))
         form.addRow("If not found", with_hint(self.whole_pc, WHOLE_PC_HINT))
         form.addRow("Finding content", self._exact_box)
+        form.addRow("Local model", with_hint(self.use_llm, LLM_HINT))
         form.addRow("Subfolder", self.pattern)
         form.addRow("Reply text", self.reply)
         page = QWidget()
@@ -205,6 +211,9 @@ class DepartmentDialog(QDialog):
         self.whole_pc = QCheckBox("If it is not found there, search this whole PC")
         self.whole_pc.setAccessibleName("Search the whole PC")
         self.whole_pc.setChecked(bool(d and d.search_whole_pc))
+        self.use_llm = QCheckBox("Also read this department's emails with the local model")
+        self.use_llm.setAccessibleName("Use the local model")
+        self.use_llm.setChecked(bool(d and d.use_local_llm))
 
     def _root_row(self) -> QHBoxLayout:
         browse = QPushButton("Browse…")
@@ -232,6 +241,7 @@ class DepartmentDialog(QDialog):
                 browse_anywhere=self.anywhere.isChecked(),
                 source_roots=self.folders.paths(),
                 search_whole_pc=self.whole_pc.isChecked(),
+                use_local_llm=self.use_llm.isChecked(),
             )
         except ValidationError as exc:
             QMessageBox.warning(self, "Check the department", explain_validation(exc))
@@ -743,6 +753,7 @@ class SettingsPage(QWidget):
             senders = ", ".join([*d.sender_emails, *(f"@{x}" for x in d.sender_domains)])
             names = "Exact" if d.exact_folder_names else "Suggested"
             names += " · from anywhere" if d.browse_anywhere else ""
+            names += " · local model" if d.use_local_llm else ""
             searches = "; ".join(d.source_roots) if d.source_roots else "General storage folders"
             searches += " · then this PC" if d.search_whole_pc else ""
             for col, text in enumerate([d.name, senders, d.destination_root, names, searches]):

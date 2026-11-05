@@ -91,6 +91,14 @@ content, and pulls out the folder names.
    names (a note says they were read by the smart reader), choose the folders, approve. Nothing is
    ready, copied or answered by itself.
 
+**Switches.** *Settings → Smart reading → Read emails from senders that are not in a department*
+is the master switch: off (the default) means the model is never started. Each department also
+has a tick, *Also read this department's emails with the local model*, used only when the
+emails have no lines that are exactly folder names. **Start the model now / Stop the model**
+controls it by hand; otherwise it starts when mail needs reading and stops after the idle time.
+Every answer of the model (a request or not, the folders, the confidence) is written to the
+History of the request.
+
 **Safety.** Mail from strangers is untrusted input. The model has no tools: it cannot copy, send or
 open anything, and its answer is only ever used as search text. Everything runs on this PC; email
 text is never sent to an AI service. The program that runs the model listens only on `127.0.0.1`

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Protocol
 
-from contentshare.config.models import AppConfig
+from contentshare.config.models import AppConfig, Department
 from contentshare.gmail.errors import AuthRequiredError, GmailError, MessageFormatError
 from contentshare.gmail.gateway import GmailGateway
 from contentshare.gmail.message import InboundEmail, parse_message
@@ -224,12 +224,59 @@ class IntakeService:
             return None
         self.repo.log("system", "sender_checked", None, email_id=email_id,
                       verdict=auth.verdict.value, reason=auth.reason)  # fmt: skip
-        ids = process_email_requests(
-            self.repo, self.index, self.config, email_id, msg.subject, msg.body, today=self._today()
-        )
+        reading = self._department_reading(msg, dept, report)
+        if reading is not None and reading.is_request and reading.folders:
+            ids = process_named_requests(
+                self.repo,
+                self.index,
+                self.config,
+                email_id,
+                list(reading.folders),
+                today=self._today(),
+            )
+            report.smart_requests += 1
+        else:
+            ids = process_email_requests(
+                self.repo,
+                self.index,
+                self.config,
+                email_id,
+                msg.subject,
+                msg.body,
+                today=self._today(),
+            )
+        self._log_reading(reading, ids, msg)
         self._count(ids, report)
         self._label(msg.message_id, report)
         return None
+
+    def _department_reading(
+        self, msg: InboundEmail, dept: Department, report: IntakeReport
+    ) -> Reading | None:
+        """For a department that uses the local model: ask it only when the email has no lines
+        that are exactly folder names. If it cannot answer, the usual reading is used."""
+        if not (self.config.smart.enabled and dept.use_local_llm):
+            return None
+        found, _notes = exact_items(
+            msg.subject, msg.body, self.index, self.config.roots_for(dept), found_only=True
+        )
+        if found:
+            return None
+        return self._read_with_model(msg, report)
+
+    def _log_reading(
+        self, reading: Reading | None, request_ids: list[int], msg: InboundEmail
+    ) -> None:
+        """Write what the model answered into the history (names and confidence only)."""
+        if reading is None:
+            return
+        verdict = "a content request" if reading.is_request else "not a content request"
+        names = "; ".join(reading.folders) or "none"
+        reason = f"Local model: {verdict}; folders: {names}; confidence {reading.confidence:.0%}"
+        if not request_ids:
+            self.repo.log("model", "model_read", None, reason=reason, gmail_id=msg.message_id)
+        for request_id in request_ids:
+            self.repo.log("model", "model_read", request_id, reason=reason)
 
     # ------------------------------------------------------------------ senders in no department
     def _handle_unlisted(self, msg: InboundEmail, report: IntakeReport) -> None:
@@ -241,11 +288,13 @@ class IntakeService:
             return self._ignore(msg, "reply in a handled conversation with no new request", report)
         found, _notes = exact_items(msg.subject, msg.body, self.index, None, found_only=True)
         names: list[str] = []
+        reading: Reading | None = None
         if not found:
             reading = self._read_with_model(msg, report)
             if reading is None:
                 return None  # the model could not be used now: look at it again next time
             if not reading.is_request:
+                self._log_reading(reading, [], msg)
                 return self._ignore(msg, NOT_A_REQUEST, report)
             names = list(reading.folders)
         email_id = self._record_unlisted(msg)
@@ -266,6 +315,7 @@ class IntakeService:
                 msg.body,
                 today=self._today(),
             )
+        self._log_reading(reading, ids, msg)
         self._count(ids, report)
         self._label(msg.message_id, report)
         return None

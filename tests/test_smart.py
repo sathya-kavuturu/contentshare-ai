@@ -462,6 +462,66 @@ def test_listed_senders_never_go_through_the_model(world: MailWorld) -> None:
     assert reader.calls == 0 and report.requests == 1
 
 
+def _with_model_departments(w: MailWorld, reader: Any, use: bool = True) -> IntakeService:
+    departments = [d.model_copy(update={"use_local_llm": use}) for d in w.config.departments]
+    config = w.config.model_copy(
+        update={"smart": SmartSettings(enabled=True), "departments": departments}
+    )
+    return IntakeService(w.gateway, w.repo, w.index, config, today=lambda: TODAY, reader=reader)
+
+
+def test_a_department_that_uses_the_model_gets_names_from_it_and_the_answer_is_logged(
+    world: MailWorld,
+) -> None:
+    world.gmail.add(
+        make_message(message_id="d2", subject="Hello", body="Kindly share the recordings")
+    )
+    reader = FakeReader(Reading(True, (EXISTING,), 0.8))
+    report = _with_model_departments(world, reader).check_now()
+    assert reader.calls == 1 and report.requests == 1
+    (row,) = world.repo.list_requests()
+    assert row["department"] is not None
+    assert json.loads(row["query_json"])["source"] == "smart"
+    entries = [e for e in world.repo.audit_entries(row["id"]) if e["event"] == "model_read"]
+    (entry,) = entries
+    assert entry["actor"] == "model"
+    reason = json.loads(entry["detail"])["reason"]
+    assert EXISTING in reason and "80%" in reason and "a content request" in reason
+
+
+def test_a_department_without_the_option_never_asks_the_model(world: MailWorld) -> None:
+    world.gmail.add(
+        make_message(message_id="d3", subject="Hello", body="Kindly share the recordings")
+    )
+    reader = FakeReader(Reading(True, (EXISTING,)))
+    _with_model_departments(world, reader, use=False).check_now()
+    assert reader.calls == 0
+
+
+def test_a_department_email_with_exact_names_does_not_need_the_model(world: MailWorld) -> None:
+    world.gmail.add(make_message(message_id="d4", subject="Hello", body=f"Hi\n{EXISTING}\nThanks"))
+    reader = FakeReader(Reading(True, ("Other",)))
+    _with_model_departments(world, reader).check_now()
+    assert reader.calls == 0 and len(world.repo.list_requests()) == 1
+
+
+def test_a_department_email_is_still_handled_when_the_model_cannot_answer(
+    world: MailWorld,
+) -> None:
+    world.gmail.add(
+        make_message(message_id="d5", subject="Hello", body="Kindly share the recordings")
+    )
+    report = _with_model_departments(world, FakeReader(SmartError("slow"))).check_now()
+    assert report.requests == 1 and any("slow" in w for w in report.warnings)
+
+
+def test_a_mail_that_is_not_a_request_is_logged_too(world: MailWorld) -> None:
+    stranger(world, "Kindly note the newsletter attached")
+    service(world, FakeReader(Reading(False, reason="newsletter"))).check_now()
+    logged = [e for e in world.repo.audit_entries() if e["event"] == "model_read"]
+    assert len(logged) == 1 and "not a content request" in logged[0]["detail"]
+
+
 def test_the_search_for_unlisted_mail_leaves_out_automatic_senders(world: MailWorld) -> None:
     config = service(world).config
     query = build_unlisted_query(config)

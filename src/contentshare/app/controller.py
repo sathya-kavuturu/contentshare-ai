@@ -1267,6 +1267,20 @@ class Controller:
         except SmartError as exc:
             raise ActionError(str(exc)) from exc
 
+    def smart_running(self) -> bool:
+        return self._smart is not None and self._smart.running()
+
+    def smart_start(self) -> None:
+        """Start the local model now, if it is installed and not already running."""
+        try:
+            self.smart_runtime().start()
+        except SmartError as exc:
+            raise ActionError(str(exc)) from exc
+
+    def smart_stop(self) -> None:
+        if self._smart is not None:
+            self._smart.stop()
+
     def smart_forget_examples(self) -> int:
         """Delete everything the smart reader has learned from the person's decisions."""
         return self.repo.clear_examples()

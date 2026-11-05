@@ -118,6 +118,7 @@ class SmartBox(QWidget):
         self.ctx = ctx
         self._stop = threading.Event()
         self._installing = False
+        self._starting = False
         self.enabled = QCheckBox("Read emails from senders that are not in a department")
         self.model = Combo()
         self.model.setAccessibleName("Model")
@@ -143,6 +144,8 @@ class SmartBox(QWidget):
         self.stop.setVisible(False)
         self.progress = QProgressBar()
         self.progress.setVisible(False)
+        self.run_button = QPushButton("Start the model now")
+        self.run_button.clicked.connect(self._toggle_run)
         self.try_button = QPushButton("Try it on an email…")
         self.try_button.clicked.connect(self._try)
         self.forget = QPushButton("Forget what it learned")
@@ -163,6 +166,7 @@ class SmartBox(QWidget):
         status_row.addWidget(self.download)
         status_row.addWidget(self.stop)
         buttons = QHBoxLayout()
+        buttons.addWidget(self.run_button)
         buttons.addWidget(self.try_button)
         buttons.addWidget(self.forget)
         buttons.addStretch(1)
@@ -204,8 +208,12 @@ class SmartBox(QWidget):
     # ------------------------------------------------------------------ status and download
     def refresh_status(self) -> None:
         status = self.ctx.controller.smart_status()
+        running = self.ctx.controller.smart_running()
+        self.run_button.setText("Stop the model" if running else "Start the model now")
+        self.run_button.setEnabled(status.ready and not self._starting)
         if status.ready:
-            self.state.setText(f"Installed and ready: {status.model_label}.")
+            now = "running now" if running else "not running; it starts by itself when needed"
+            self.state.setText(f"Installed: {status.model_label} ({now}).")
         else:
             self.state.setText(
                 f"Not installed. Download needed: about {_size(status.missing_bytes)} "
@@ -255,6 +263,28 @@ class SmartBox(QWidget):
         self._installing = False
         self.stop.setVisible(False)
         self.progress.setVisible(False)
+
+    def _toggle_run(self) -> None:
+        controller = self.ctx.controller
+        if controller.smart_running():
+            controller.smart_stop()
+            self.refresh_status()
+            return
+        self._starting = True
+        self.run_button.setEnabled(False)
+        self.state.setText("Starting the model… this can take a minute.")
+
+        def done(_result: object) -> None:
+            self._starting = False
+            self.refresh_status()
+            self.ctx.say("The model is running")
+
+        def failed(exc: Exception) -> None:
+            self._starting = False
+            self.refresh_status()
+            self.ctx.fail(self, "The model did not start", exc)
+
+        self.ctx.bridge.work(controller.smart_start, done, failed)
 
     def _try(self) -> None:
         TryDialog(self.ctx, self).exec()

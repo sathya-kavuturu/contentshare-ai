@@ -6,6 +6,11 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Local model, per department.** Each department has a tick "Also read this department's
+  emails with the local model": when an email has no lines that are exactly folder names, the
+  model suggests the names (if it cannot answer, the usual reading is used). Settings → Smart
+  reading has a **Start the model now / Stop the model** button, and the model's answer
+  (request or not, folders, confidence) is written to the History of each request.
 - **Smart reading (ContentShare AI).** Mail from senders who are in no department can now be read
   with a small open-source language model that runs on the PC (Qwen3 4B or 1.7B, Apache-2.0,
   through llama.cpp, MIT). Rules look for exact folder names first; the model is asked only for
