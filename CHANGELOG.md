@@ -6,6 +6,11 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Refresh and Ask the model on each request.** Two buttons at the top of a request look again
+  at once: ↻ (Refresh) reads the storage folders again and looks up the folders that still wait;
+  Ask the model reads the email again with the local model and adds the folders it names.
+- **Unsaved settings.** Leaving Settings with changes that are not saved asks: Save changes,
+  Don't save or Stay here.
 - **Try the model on sample emails.** *Try it on an email…* now offers 12 hard sample emails (a
   request in a story, forwarded chains, hidden instructions, newsletters, a table with conditions).
   Choose one, edit the text, and see what the model found, its own answer and how long it took.

@@ -26,7 +26,7 @@ from contentshare.matching.service import exact_items
 from contentshare.parsing.request import parse_request
 from contentshare.parsing.text import clean_body
 from contentshare.smart.runtime import SmartError
-from contentshare.smart.schema import Reading
+from contentshare.smart.schema import Reading, reading_summary
 from contentshare.storage.repository import Repository
 
 log = logging.getLogger(__name__)
@@ -270,11 +270,7 @@ class IntakeService:
         """Write what the model answered into the history (names and confidence only)."""
         if reading is None:
             return
-        verdict = "a content request" if reading.is_request else "not a content request"
-        names = "; ".join(reading.folders) or "none"
-        reason = f"Local model: {verdict}; folders: {names}; confidence {reading.confidence:.0%}"
-        if reading.seconds > 0:
-            reason += f"; answered in {reading.seconds:.1f} s"
+        reason = reading_summary(reading)
         if not request_ids:
             self.repo.log("model", "model_read", None, reason=reason, gmail_id=msg.message_id)
         for request_id in request_ids:

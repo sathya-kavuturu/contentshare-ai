@@ -2,6 +2,7 @@
 
 from contentshare.matching.scorer import Candidate, rank_candidates, score_item
 from contentshare.matching.service import (
+    Recheck,
     Triage,
     destination_for,
     named_items,
@@ -13,6 +14,7 @@ from contentshare.matching.service import (
 
 __all__ = [
     "Candidate",
+    "Recheck",
     "Triage",
     "destination_for",
     "named_items",

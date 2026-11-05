@@ -249,6 +249,31 @@ class DepartmentDialog(QDialog):
         self.accept()
 
 
+def ask_unsaved(parent: QWidget) -> str:
+    """ "save", "discard" or "stay": what to do with the changes that were not saved."""
+    box = QMessageBox(
+        QMessageBox.Icon.Question,
+        "Unsaved changes",
+        "You changed some settings and did not save them.",
+        QMessageBox.StandardButton.NoButton,
+        parent,
+    )
+    box.setTextFormat(Qt.TextFormat.PlainText)
+    box.setInformativeText("Do you want to save the changes before you leave Settings?")
+    save = box.addButton("Save changes", QMessageBox.ButtonRole.AcceptRole)
+    discard = box.addButton("Don't save", QMessageBox.ButtonRole.DestructiveRole)
+    stay = box.addButton("Stay here", QMessageBox.ButtonRole.RejectRole)
+    box.setDefaultButton(save)
+    box.setEscapeButton(stay)
+    box.exec()
+    clicked = box.clickedButton()
+    if clicked is save:
+        return "save"
+    if clicked is discard:
+        return "discard"
+    return "stay"
+
+
 class SettingsPage(QWidget):
     saved = Signal()  # settings were stored (the window re-reads schedule and tray options)
     open_help = Signal(str)  # a Help topic to show, for example "gmail"
@@ -677,6 +702,30 @@ class SettingsPage(QWidget):
             max_attempts=self.attempts.value(),
         )
         return AppConfig.model_validate(base)
+
+    def has_unsaved(self) -> bool:
+        """Was anything changed in the boxes and not saved yet? Settings that cannot be saved as
+        they stand (a validation error) count as changed."""
+        if self.telegram_box.token.text().strip():
+            return True
+        try:
+            typed = self.collect()
+        except (ValidationError, ValueError):
+            return True
+        return typed.model_dump() != self.ctx.controller.config.model_dump()
+
+    def settle_unsaved(self) -> bool:
+        """Called before the person leaves Settings. If there are unsaved changes, ask whether to
+        save them, drop them, or stay. Returns True when leaving is fine."""
+        if not self.has_unsaved():
+            return True
+        answer = ask_unsaved(self)
+        if answer == "stay":
+            return False
+        if answer == "save":
+            return self.save()  # a setting that cannot be saved keeps the person here
+        self.load()  # "don't save": the boxes show what is saved again
+        return True
 
     def save(self) -> bool:
         try:

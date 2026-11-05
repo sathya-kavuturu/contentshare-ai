@@ -258,6 +258,22 @@ class RequestCard(QFrame):
         text, tone = group_status(group)
         self.status = _chip(text, tone)
         head.addWidget(self.status)
+        self.refresh_button = _button("↻", self._refresh)
+        self.refresh_button.setToolTip(
+            "Look the folders of this email up again in the index. The storage folders are "
+            "read again first, so a folder made since then is found."
+        )
+        self.refresh_button.setAccessibleName(f"Refresh request {v.id}")
+        self.ask_button = _button("Ask model", self._ask_model)
+        self.ask_button.setToolTip(
+            "Read this email again with the local model and add the folders it finds "
+            "(needs the smart reading model, Settings → Smart reading)."
+        )
+        self.ask_button.setAccessibleName(f"Ask the local model about request {v.id}")
+        for button in (self.refresh_button, self.ask_button):
+            button.setFlat(True)
+            self._buttons.append(button)
+            head.addWidget(button)
         root.addLayout(head)
 
         # Folded: just who asked and for which department, under the title.
@@ -516,6 +532,31 @@ class RequestCard(QFrame):
         self.state.show_text = not self.state.show_text
         self.snippet.setVisible(self.state.show_text)
         self.text_toggle.setText("▾ Hide text" if self.state.show_text else "▸ Show text")
+
+    def _refresh(self) -> None:
+        self._busy(True)
+        controller, email_id = self.ctx.controller, self.view.email_id
+        self.ctx.bridge.work(
+            lambda: controller.refresh_email(email_id),
+            on_done=self._looked_again,
+            on_error=self._on_error("Cannot refresh"),
+        )
+
+    def _ask_model(self) -> None:
+        self._busy(True)
+        self.ctx.say(
+            "Asking the local model… the first time it has to start, which can take a minute."
+        )
+        controller, email_id = self.ctx.controller, self.view.email_id
+        self.ctx.bridge.work(
+            lambda: controller.ask_model_about_email(email_id),
+            on_done=self._looked_again,
+            on_error=self._on_error("Cannot ask the model"),
+        )
+
+    def _looked_again(self, message: str) -> None:
+        self._busy(False)
+        self.ctx.say(message)
 
     def _toggle_auto(self, on: bool) -> None:
         try:

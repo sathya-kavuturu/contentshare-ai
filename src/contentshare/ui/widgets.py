@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPaintEvent, QPen, QResizeEvent
 from PySide6.QtWidgets import (
     QComboBox,
@@ -202,7 +202,13 @@ class StackBody(QWidget):
 
     def add(self, widget: QWidget) -> None:
         self.stack.insertWidget(self.stack.count() - 1, widget)
+        widget.installEventFilter(self)  # a card that folds or unfolds changes its own height
         self.fit()
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt override
+        if event.type() == QEvent.Type.LayoutRequest:
+            QTimer.singleShot(0, self.fit)  # after the card has laid itself out
+        return super().eventFilter(watched, event)
 
     def remove(self, widget: QWidget) -> None:
         self.stack.removeWidget(widget)
@@ -218,8 +224,10 @@ class StackBody(QWidget):
             layout = child.layout() if child is not None else None
             if child is not None and layout is not None:
                 # Qt under-reports the wrapped height of nested layouts, so never go below
-                # the layout's own preferred height.
-                child.setMinimumHeight(layout.totalHeightForWidth(width))
+                # the layout's own preferred height, nor below what the card asks for itself.
+                needed = max(layout.totalHeightForWidth(width), child.sizeHint().height())
+                if child.minimumHeight() != needed:
+                    child.setMinimumHeight(needed)
 
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt override
         super().resizeEvent(event)

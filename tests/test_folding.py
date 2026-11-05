@@ -210,3 +210,28 @@ def test_the_menu_icon_at_the_top_folds_and_opens_the_menu(rig: Rig) -> None:  #
     assert not window.top_toggle.isHidden()  # still there to open it again
     window.top_toggle.click()
     assert not window.sidebar_collapsed and window.top_toggle.accessibleName() == "Fold the menu"
+
+
+def test_cards_keep_their_height_and_the_list_scrolls_when_the_window_is_short(
+    rig: Rig,  # noqa: F811
+    qtbot: Any,
+) -> None:
+    for i in range(8):
+        body = "\n".join(f"- Invented Talk {i}-{j}" for j in range(5))
+        rig.mail(message_id=f"s{i}", subject="Re: Request for content", body=body)
+    rig.window.requests.refresh()
+    cards = rig.cards()
+    assert len(cards) == 8
+    for card in cards:
+        card.set_collapsed(True)
+    rig.window.resize(rig.window.minimumWidth(), rig.window.minimumHeight())
+    qtbot.wait(50)
+    for card in cards:
+        needed = card.layout().totalHeightForWidth(card.width())
+        assert card.height() >= needed, (card.height(), needed)  # not squeezed to a thin bar
+    bar = rig.window.requests.scroller.verticalScrollBar()
+    assert bar.maximum() > 0  # the rest is reached by scrolling
+    cards[0].set_collapsed(False)  # opening one card: the others keep their height
+    qtbot.wait(50)
+    for c in rig.cards():
+        assert c.height() >= c.layout().totalHeightForWidth(c.width())

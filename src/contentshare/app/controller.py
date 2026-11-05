@@ -40,6 +40,7 @@ from contentshare.gmail.auth import GmailAuth, required_scopes
 from contentshare.gmail.errors import AuthRequiredError, GmailError
 from contentshare.gmail.gateway import GmailGateway
 from contentshare.gmail.intake import IntakeReport, IntakeService
+from contentshare.gmail.message import parse_message
 from contentshare.gmail.replies import ReplyDraft, ReplyError, ReplyResult, ReplyService
 from contentshare.index.pcsearch import DEFAULT_SECONDS, search_pc
 from contentshare.index.store import ContentIndex, IndexedItem, ScanReport, measure
@@ -53,13 +54,13 @@ from contentshare.jobs.copy_job import (
 from contentshare.jobs.queue import CopyQueue
 from contentshare.jobs.states import TERMINAL, InvalidTransitionError, RequestState
 from contentshare.matching.scorer import Candidate, rank_candidates
-from contentshare.matching.service import destination_for
+from contentshare.matching.service import destination_for, process_named_requests, recheck_email
 from contentshare.parsing.dates import date_phrases
 from contentshare.parsing.request import RequestItem, parse_request
 from contentshare.security.paths import PathSafetyError, resolve_within
 from contentshare.smart.reader import SmartReader
 from contentshare.smart.runtime import Installer, Runtime, SmartError, Status
-from contentshare.smart.schema import Reading
+from contentshare.smart.schema import Reading, reading_summary
 from contentshare.storage.repository import Repository
 
 log = logging.getLogger(__name__)
@@ -71,6 +72,7 @@ S = RequestState
 
 GatewayFactory = Callable[[], GmailGateway]
 MANUAL_RESULTS = 20
+RECHECK_MINUTES = 1  # Refresh reads the storage folders again if they were read longer ago
 UI_OPTIONS = (
     "appearance",
     "sidebar_collapsed",
@@ -487,6 +489,69 @@ class Controller:
         )  # fmt: skip
         self._emit("changed", request_id)
         return request_id
+
+    def refresh_email(self, email_id: int) -> str:
+        """Look the folders of this email that still wait for content up again in the index (the
+        storage folders are read again first unless that was done in the last minute). Returns a
+        sentence for the person. Folders somebody chose content for are left alone."""
+        self._require_sign_in()
+        if self.repo.get_email(email_id) is None:
+            raise ActionError("This request no longer exists")
+        result = recheck_email(
+            self.repo,
+            self.index,
+            self.config,
+            email_id,
+            actor=self.user_name,
+            today=self._today(),
+            minutes=RECHECK_MINUTES,
+        )
+        if result.found or result.updated or result.scanned:
+            self._emit("changed")
+        return result.message
+
+    def ask_model_about_email(self, email_id: int) -> str:
+        """Read this email again with the local model (the text is fetched from Gmail) and add
+        a line for each folder it names that is not listed yet. Works whatever the master switch
+        says: the person asked for it. Returns a sentence for the person."""
+        self._require_sign_in()
+        email = self.repo.get_email(email_id)
+        if email is None:
+            raise ActionError("This request no longer exists")
+        try:
+            msg = parse_message(self._gateway_factory().get_message(str(email["gmail_message_id"])))
+        except Exception as exc:  # not connected, offline, or the email was deleted
+            raise ActionError(f"The email could not be read from Gmail again: {exc}") from exc
+        try:
+            reading = SmartReader(self.smart_runtime(), self.repo, self.config.smart).read(
+                msg.subject, msg.body
+            )
+        except SmartError as exc:
+            raise ActionError(str(exc)) from exc
+        lines = self.repo.requests_of_email(email_id)
+        for row in lines:
+            self.repo.log("model", "model_read", row["id"], reason=reading_summary(reading))
+        if not reading.is_request:
+            return "The model says this email is not a content request."
+        listed = set()
+        for row in lines:
+            try:
+                listed.add(
+                    str(json.loads(row.get("query_json") or "{}")["item"]["program"]).casefold()
+                )
+            except (ValueError, KeyError, TypeError):
+                continue
+        names = [n for n in reading.folders if n.casefold() not in listed]
+        if not names:
+            return (
+                f"The model found no folder that is not listed already ({reading.seconds:.1f} s)."
+            )
+        ids = process_named_requests(
+            self.repo, self.index, self.config, email_id, names, today=self._today(),
+            first_line=max((r["line_no"] for r in lines), default=0) + 1,
+        )  # fmt: skip
+        self._emit("changed")
+        return f"The model found {len(ids)} new folder(s) in {reading.seconds:.1f} s; look at them."
 
     def discard_added_folder(self, request_id: int) -> None:
         """The person added a folder and then chose nothing: take the empty line away again."""

@@ -92,6 +92,7 @@ class MainWindow(QMainWindow):
         self._told_about_tray = False
         self.setWindowTitle("ContentShare")
         self.setWindowIcon(app_icon())
+        self.setMinimumSize(920, 600)  # smaller than this the screens stop being usable
         self.resize(1180, 780)
         self.ctx = UiContext(controller, bridge, self.say, owner=self, startup=startup)
 
@@ -351,6 +352,16 @@ class MainWindow(QMainWindow):
 
     def _switch(self, row: int) -> None:
         if row < 0:
+            return
+        settings_row = PAGES.index("Settings")
+        if (
+            self.stack.currentIndex() == settings_row
+            and row != settings_row
+            and not self.settings.settle_unsaved()
+        ):
+            self.nav.blockSignals(True)  # stay in Settings, and show the menu that way again
+            self.nav.setCurrentRow(settings_row)
+            self.nav.blockSignals(False)
             return
         self.stack.setCurrentIndex(row)
         if PAGES[row] == "Active copies":

@@ -2,7 +2,7 @@
 
 Change things on any tab, then press **Save settings** (bottom right). **Revert** throws away
 what you typed since the last save. If something you entered is not acceptable, a message says
-which entry and why, and nothing is saved. Settings cannot be saved while a copy is running.
+which entry and why, and nothing is saved. Settings cannot be saved while a copy is running. If you try to leave Settings with changes that are not saved, a question appears: **Save changes**, **Don't save** or **Stay here**.
 
 ## General
 

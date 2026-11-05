@@ -52,6 +52,16 @@ class Reading:
     answer: str = field(default="", compare=False)  # the model's own answer, as it sent it
 
 
+def reading_summary(reading: Reading) -> str:
+    """One line for the History: what the model answered, and how long it took."""
+    verdict = "a content request" if reading.is_request else "not a content request"
+    names = "; ".join(reading.folders) or "none"
+    text = f"Local model: {verdict}; folders: {names}; confidence {reading.confidence:.0%}"
+    if reading.seconds > 0:
+        text += f"; answered in {reading.seconds:.1f} s"
+    return text
+
+
 def normalise(text: str) -> str:
     return _SPACES.sub(" ", text).strip().casefold()
 

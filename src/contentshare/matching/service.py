@@ -251,6 +251,7 @@ def process_named_requests(
     names: list[str],
     *,
     today: date | None = None,
+    first_line: int = 1,
 ) -> list[int]:
     """Create one request line for each name the smart reader found in an email. These emails
     come from senders in no department, so every line waits for the person (never auto-ready,
@@ -263,7 +264,7 @@ def process_named_requests(
     roots = config.roots_for(dept)
     ids: list[int] = []
     for number, (item, first_triage) in enumerate(
-        named_items(names, index, config, today=today, roots=roots), start=1
+        named_items(names, index, config, today=today, roots=roots), start=first_line
     ):
         request_id = repo.add_request(email_id, number, {"item": item.to_dict()}, auto_reply=False)
         triage, fields = _apply_safety_rules(first_triage, item, dept, email)
@@ -279,7 +280,9 @@ def process_named_requests(
 REFRESH_AFTER_MINUTES = 10
 
 
-def _refresh_stale_index(index: ContentIndex, roots: list[str]) -> bool:
+def _refresh_stale_index(
+    index: ContentIndex, roots: list[str], minutes: int = REFRESH_AFTER_MINUTES
+) -> bool:
     """Read the storage folders again when something asked for was not found and they were last
     read a while ago: the folder may have been made since. Returns True if it did read them."""
     now = datetime.now(UTC)
@@ -292,7 +295,7 @@ def _refresh_stale_index(index: ContentIndex, roots: list[str]) -> bool:
             finished = None
         if finished is not None and finished.tzinfo is None:
             finished = finished.replace(tzinfo=UTC)
-        if finished is None or now - finished > timedelta(minutes=REFRESH_AFTER_MINUTES):
+        if finished is None or now - finished > timedelta(minutes=minutes):
             due.append(root)
     if not due:
         return False
@@ -355,3 +358,120 @@ def process_email_requests(
         repo.transition(request_id, triage.state, actor="system", reason=triage.reason, **fields)
         ids.append(request_id)
     return ids
+
+
+def retriage_line(
+    item: RequestItem,
+    index: ContentIndex,
+    config: AppConfig,
+    dept: Department | None,
+    email: dict[str, Any],
+    *,
+    today: date,
+    roots: list[str] | None,
+) -> tuple[Triage, dict[str, Any]] | None:
+    """Look one line up again. ``None`` means there is nothing to change: the line has no name,
+    or the department gives exact folder names and still no folder has this name (it never
+    guesses)."""
+    name = item.program.strip()
+    if not name:
+        return None
+    folders = drop_enclosing(index.find_dirs_named([name], roots))
+    files = {} if name in folders else index.find_files_named([name], roots)
+    found = folders.get(name) or files.get(name)
+    if found and len(found) == 1:
+        kind = "Folder" if found[0].is_dir else "File"
+        candidate = _exact_candidate(found[0])
+        reason = f"{kind} “{found[0].name}” found with exactly that name"
+        first = Triage(RequestState.READY, reason, [candidate], candidate)
+    elif found:
+        reason = f"{len(found)} items are named “{name}”; please pick the right one"
+        first = Triage(RequestState.NEEDS_REVIEW, reason, [_exact_candidate(i) for i in found])
+    elif dept is not None and dept.exact_folder_names:
+        return None
+    else:
+        first = triage_item(item, index, config, today=today, roots=roots)
+    return _apply_safety_rules(first, item, dept, email)
+
+
+@dataclass(frozen=True)
+class Recheck:
+    """What looking an email's folders up again did."""
+
+    scanned: bool  # the storage folders were read again first
+    checked: int  # lines looked up
+    found: int  # lines that are now ready
+    updated: int  # lines that are still waiting but now show something different
+
+    @property
+    def message(self) -> str:
+        if self.checked == 0:
+            return "Nothing to look up again: no folder of this email is waiting for content."
+        read = "Read the storage folders again. " if self.scanned else ""
+        if self.found:
+            return f"{read}{self.found} of {self.checked} folders found and ready."
+        if self.updated:
+            return f"{read}No folder is ready yet, but the matches changed: look at them."
+        return f"{read}Looked again: nothing new was found."
+
+
+def recheck_email(
+    repo: Repository,
+    index: ContentIndex,
+    config: AppConfig,
+    email_id: int,
+    *,
+    actor: str,
+    today: date | None = None,
+    minutes: int = 1,
+) -> Recheck:
+    """Look the folders of one email up again in the index (reading the storage folders first
+    when they were last read more than ``minutes`` ago). Only lines that still wait for content
+    and that nobody chose anything for are touched."""
+    today = today or date.today()
+    email = repo.get_email(email_id)
+    if email is None:
+        raise KeyError(f"No email {email_id}")
+    dept = next((d for d in config.departments if d.name == email.get("department")), None)
+    roots = config.roots_for(dept)
+    lines = [
+        r
+        for r in repo.requests_of_email(email_id)
+        if r["state"] == RequestState.NEEDS_REVIEW and not r.get("source_path")
+    ]
+    if not lines:
+        return Recheck(False, 0, 0, 0)
+    scanned = _refresh_stale_index(
+        index, roots if roots is not None else config.all_roots(), minutes
+    )
+    checked = found = updated = 0
+    for row in lines:
+        try:
+            detail = json.loads(row.get("query_json") or "{}")
+            item = RequestItem.from_dict(detail["item"])
+        except (ValueError, KeyError, TypeError):
+            continue
+        checked += 1
+        result = retriage_line(item, index, config, dept, email, today=today, roots=roots)
+        if result is None:
+            continue  # nothing to change
+        triage, fields = result
+        fresh = json.loads(
+            _query_json(
+                item, triage, list(detail.get("warnings") or []), str(detail.get("source") or "")
+            )
+        )
+        if detail.get("added"):
+            fresh["added"] = True
+        text = json.dumps(fresh)
+        if triage.state == RequestState.READY:
+            fields["query_json"] = text
+            repo.transition(
+                row["id"], RequestState.READY, actor=actor, reason="found again when refreshed",
+                **fields,
+            )  # fmt: skip
+            found += 1
+        elif text != row.get("query_json"):
+            repo.update_request(row["id"], actor=actor, reason="looked up again", query_json=text)
+            updated += 1
+    return Recheck(scanned, checked, found, updated)
