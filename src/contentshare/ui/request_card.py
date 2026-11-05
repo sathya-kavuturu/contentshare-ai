@@ -90,10 +90,12 @@ def _chip(text: str, tone: str) -> QLabel:
 
 
 def _note_row(chip: QLabel) -> QHBoxLayout:
-    """A chip that keeps its own width instead of stretching across the card."""
+    """A chip that keeps its own width instead of stretching across the card. A long text
+    wraps inside the card: it must never make the card wider than the window."""
+    chip.setWordWrap(True)
+    chip.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
     row = QHBoxLayout()
     row.addWidget(chip)
-    row.addStretch(1)
     return row
 
 

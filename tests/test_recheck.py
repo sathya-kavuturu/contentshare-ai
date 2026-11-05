@@ -233,3 +233,37 @@ def test_changes_that_cannot_be_saved_keep_you_in_settings(
     page.default_reply.setPlainText("")  # an empty reply text cannot be saved
     _go(rig, "History")
     assert rig.window.stack.currentWidget() is page
+
+
+# --------------------------------------------------------------------------- put a skipped one back
+def test_a_skipped_request_can_be_put_back(h: Harness) -> None:  # noqa: F811
+    _waiting_email(h)
+    (view,) = h.ctl.views()
+    with pytest.raises(ActionError, match="Only a skipped"):
+        h.ctl.restore(view.id)
+    h.ctl.skip(view.id)
+    assert h.ctl.view(view.id).state == "SKIPPED"
+    h.ctl.restore(view.id)
+    assert h.ctl.view(view.id).state == "NEEDS_REVIEW"  # no content chosen yet
+
+
+def test_history_puts_a_skipped_request_back(rig: Rig) -> None:  # noqa: F811
+    rig.mail(message_id="s1", subject="Content request", body="Please share the English recording")
+    (view,) = rig.controller.views()
+    rig.controller.skip(view.id)
+    page = rig.window.history
+    page.refresh()
+    assert not page.restore_button.isEnabled()
+    page.table.selectRow(0)
+    assert page.restore_button.isEnabled()
+    page.restore_button.click()
+    assert rig.controller.view(view.id).state in {"NEEDS_REVIEW", "READY"}
+
+
+# --------------------------------------------------------------------------- a long warning
+def test_a_long_warning_does_not_widen_the_card(rig: Rig, qtbot: Any) -> None:  # noqa: F811
+    from contentshare.ui.request_card import _chip, _note_row
+
+    chip = _chip("⚠ " + "These lines of the email were not searched; " * 12, "warn")
+    _note_row(chip)
+    assert chip.wordWrap() and chip.minimumSizeHint().width() < 400

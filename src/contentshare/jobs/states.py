@@ -30,11 +30,13 @@ TRANSITIONS: dict[RequestState, frozenset[RequestState]] = {
     S.FAILED: frozenset({S.APPROVED, S.SKIPPED}),
     S.VERIFIED: frozenset({S.REPLIED}),
     S.REPLIED: frozenset(),
-    S.SKIPPED: frozenset(),
+    # A skipped request can be put back by the person (History -> Put back in Requests).
+    S.SKIPPED: frozenset({S.NEEDS_REVIEW, S.READY}),
     S.REJECTED: frozenset(),
 }
 
-TERMINAL = frozenset(state for state, nxt in TRANSITIONS.items() if not nxt)
+# Skipped is final as far as editing goes: it is only put back as a whole, never changed in place.
+TERMINAL = frozenset(state for state, nxt in TRANSITIONS.items() if not nxt) | {S.SKIPPED}
 
 
 class InvalidTransitionError(ValueError):

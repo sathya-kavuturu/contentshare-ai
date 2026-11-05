@@ -792,6 +792,20 @@ class Controller:
         self._learn_dismissed(int(self._row(request_id)["email_id"]))
         self._emit("changed", request_id)
 
+    def restore(self, request_id: int) -> None:
+        """Put a skipped request back into the Requests list (it was skipped by mistake). It is
+        Ready again when it still has its content and destination, else it waits for review."""
+        row = self._row(request_id)
+        if row["state"] != S.SKIPPED:
+            raise ActionError("Only a skipped request can be put back")
+        ready = bool(row["source_path"] and row["destination_path"])
+        self._transition(
+            request_id,
+            S.READY if ready else S.NEEDS_REVIEW,
+            reason="put back by the user",
+        )
+        self._emit("changed", request_id)
+
     def reject(self, request_id: int, reason: str = "") -> None:
         self._transition(request_id, S.REJECTED, reason=reason.strip()[:200] or "rejected")
         self._learn_dismissed(int(self._row(request_id)["email_id"]))

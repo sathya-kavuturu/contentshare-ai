@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from contentshare.app.controller import Event, RequestView
+from contentshare.app.controller import ActionError, Event, RequestView
 from contentshare.ui.context import UiContext
 from contentshare.ui.status import STATUS, style_for
 from contentshare.ui.theme import current_theme
@@ -92,6 +92,13 @@ class HistoryPage(QWidget):
         head.addWidget(self.search)
         head.addWidget(self.state)
         head.addWidget(export)
+        self.restore_button = QPushButton("Put back in Requests")
+        self.restore_button.setToolTip(
+            "Skipped by mistake? Select the skipped request and put it back in the Requests list."
+        )
+        self.restore_button.setEnabled(False)
+        self.restore_button.clicked.connect(self.restore)
+        head.addWidget(self.restore_button)
         root.addLayout(head)
 
         split = QSplitter(Qt.Orientation.Vertical)
@@ -174,9 +181,11 @@ class HistoryPage(QWidget):
         request_id = self._selected_id()
         if request_id is None:
             self.detail.clear()
+            self.restore_button.setEnabled(False)
             return
         c = self.ctx.controller
         view = c.view(request_id)
+        self.restore_button.setEnabled(view.state == "SKIPPED")
         replies = c.replies_for(request_id)
         parts = [
             f"Subject: {view.subject}",
@@ -196,6 +205,18 @@ class HistoryPage(QWidget):
             )
         parts += ["", "Audit trail", audit_text(c.audit(request_id))]
         self.detail.setPlainText("\n".join(parts))
+
+    def restore(self) -> None:
+        request_id = self._selected_id()
+        if request_id is None:
+            return
+        try:
+            self.ctx.controller.restore(request_id)
+        except ActionError as exc:
+            QMessageBox.warning(self, "Cannot put it back", str(exc))
+            return
+        self.ctx.say(f"Request #{request_id} is back in the Requests list")
+        self.refresh()
 
     def export(self) -> None:
         path, _filter = QFileDialog.getSaveFileName(
