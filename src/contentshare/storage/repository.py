@@ -246,6 +246,15 @@ class Repository:
                 )
             ]
 
+    def forget_ignored_for(self, reason: str) -> int:
+        """Forget every left-alone mail that was left alone for this reason, so the next check
+        reads it again. Returns how many."""
+        with self.db.transaction() as conn:
+            done = conn.execute("DELETE FROM emails WHERE ignored_reason = ?", (reason,)).rowcount
+            if done:
+                self._audit(conn, "system", "emails_read_again", None, {"reason": reason})
+        return int(done)
+
     def forget_ignored_email(self, email_id: int) -> bool:
         """Forget that a left-alone mail was seen, so the next check reads it again."""
         with self.db.transaction() as conn:

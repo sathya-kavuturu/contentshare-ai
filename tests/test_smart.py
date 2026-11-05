@@ -701,7 +701,23 @@ def test_skipped_mail_is_listed_and_can_be_read_again(world: MailWorld) -> None:
     assert world.intake.check_now().ignored == 1
     (row,) = world.repo.ignored_emails()
     assert "not in any department" in row["ignored_reason"]
-    assert world.intake.check_now().examined == 0  # remembered: not fetched again
+    # left alone only for want of a department: looked at again at every check
+    assert world.intake.check_now().examined == 1
+    (row,) = world.repo.ignored_emails()
     assert world.repo.forget_ignored_email(row["id"])
     assert not world.repo.forget_ignored_email(row["id"])  # already forgotten
     assert world.intake.check_now().examined == 1  # read again at the next check
+
+
+def test_mail_ignored_by_an_earlier_version_is_read_again_when_its_sender_has_no_department(
+    world: MailWorld,
+) -> None:
+    stranger(world, f"Kindly share\n{EXISTING}\nThanks")
+    assert world.repo.add_email(
+        gmail_message_id="u1",
+        gmail_thread_id="t", sender_email="x@y.org", sender_name="", department=None,
+        subject="s", snippet="", received_at="2026-11-01T00:00:00+00:00",
+        auth_status="unknown", ignored_reason="sender is not in any department",
+    )  # fmt: skip
+    report = world.intake.check_now()
+    assert report.examined == 1 and report.requests == 1

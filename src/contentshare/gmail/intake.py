@@ -41,6 +41,7 @@ ACKNOWLEDGEMENT_WORDS = (
 )  # fmt: skip
 UNREADABLE_SENDER = "unreadable@invalid.example"
 NOT_A_REQUEST = "not recognised as a content request"
+NOT_IN_DEPARTMENT = "sender is not in any department"
 # Mail from automatic senders is never worth reading for a request.
 AUTOMATIC_SENDERS = (
     "noreply OR no-reply OR donotreply OR do-not-reply OR mailer-daemon OR notifications"
@@ -172,6 +173,10 @@ class IntakeService:
 
     def _new_ids(self) -> list[str]:
         seen: dict[str, None] = {}
+        if self.config.smart.read_unlisted:
+            # Mail once left alone only because its sender was in no department (an earlier
+            # version, or reading of such senders switched off) is looked at again now.
+            self.repo.forget_ignored_for(NOT_IN_DEPARTMENT)
         for query in build_queries(self.config):
             room = self.config.gmail.max_messages - len(seen)
             if room <= 0:
@@ -196,7 +201,7 @@ class IntakeService:
         if dept is None:
             if self.config.smart.read_unlisted:
                 return self._handle_unlisted(msg, report)
-            return self._ignore(msg, "sender is not in any department", report)
+            return self._ignore(msg, NOT_IN_DEPARTMENT, report)
         if self._is_followup_without_request(msg):
             return self._ignore(msg, "reply in a handled conversation with no new request", report)
 
@@ -297,7 +302,7 @@ class IntakeService:
                     "has what it names; turn on Smart reading (Settings) to understand other "
                     "wording",
                 )
-                return self._ignore(msg, "sender is not in any department", report)
+                return self._ignore(msg, NOT_IN_DEPARTMENT, report)
             # 2. the model reads it, and what it names is looked up in the index again
             reading = self._read_with_model(msg, report)
             if reading is None:
