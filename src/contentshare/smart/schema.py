@@ -114,7 +114,7 @@ def parse_answer(text: str, email_text: str) -> Reading | None:
     score = float(confidence) if isinstance(confidence, int | float) else 0.0
     reason = data.get("reason")
     return Reading(
-        is_request=bool(data["is_request"]) and bool(kept),
+        is_request=bool(data["is_request"]),  # by the context; names may be missing
         folders=tuple(kept),
         confidence=max(0.0, min(1.0, score)),
         reason=_SPACES.sub(" ", reason).strip()[:200] if isinstance(reason, str) else "",

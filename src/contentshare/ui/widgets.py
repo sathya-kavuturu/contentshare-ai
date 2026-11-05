@@ -3,7 +3,17 @@
 from __future__ import annotations
 
 import shiboken6
-from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QObject,
+    QPointF,
+    QRectF,
+    QSize,
+    Qt,
+    QTimer,
+    QVariantAnimation,
+)
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPaintEvent, QPen, QResizeEvent
 from PySide6.QtWidgets import (
     QComboBox,
@@ -238,9 +248,9 @@ class StackBody(QWidget):
 
 
 class BurgerButton(QPushButton):
-    """The menu icon (three bars) that folds the menu on the left. It is drawn here, in the
-    theme's colours, so it is sharp at any scale and in both themes; a text glyph was small and
-    its box looked out of place."""
+    """The menu icon that folds the menu on the left. It is drawn here, in the theme's colours,
+    so it is sharp at any scale and in both themes. Three bars (the menu is folded: press to open
+    it) turn smoothly into an arrow pointing left (the menu is open: press to fold it)."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -248,27 +258,55 @@ class BurgerButton(QPushButton):
         self.setFlat(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)  # a keyboard ring, none after a mouse click
+        self._shape = 1.0  # 0: three bars, 1: arrow
+        self._anim = QVariantAnimation(self)
+        self._anim.setDuration(MENU_MS)
+        self._anim.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._anim.valueChanged.connect(self._set_shape)
+
+    def _set_shape(self, value: object) -> None:
+        self._shape = float(value) if isinstance(value, int | float) else 0.0
+        self.update()
+
+    def show_open(self, is_open: bool, *, animate: bool = False) -> None:
+        """The menu is open (arrow) or folded (bars); with ``animate`` the icon turns over."""
+        target = 1.0 if is_open else 0.0
+        self._anim.stop()
+        if animate:
+            self._anim.setStartValue(self._shape)
+            self._anim.setEndValue(target)
+            self._anim.start()
+        else:
+            self._set_shape(target)
 
     def paintEvent(self, _event: QPaintEvent) -> None:  # noqa: N802 (Qt name)
         theme = current_theme()
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         box = QRectF(self.rect()).adjusted(1, 1, -1, -1)
-        if self.isDown():
-            painter.setBrush(QColor(theme.border))
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawRoundedRect(box, 8, 8)
-        elif self.underMouse():
-            painter.setBrush(QColor(theme.hover))
+        if self.isDown() or self.underMouse():
+            painter.setBrush(QColor(theme.border if self.isDown() else theme.hover))
             painter.setPen(Qt.PenStyle.NoPen)
             painter.drawRoundedRect(box, 8, 8)
         if self.hasFocus():
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.setPen(QPen(QColor(theme.accent), 2))
             painter.drawRoundedRect(box, 8, 8)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(theme.text))
-        left, width, bar = (self.width() - 18) / 2, 18.0, 2.0
-        middle = self.height() / 2
-        for offset in (-6.0, 0.0, 6.0):
-            painter.drawRoundedRect(QRectF(left, middle + offset - bar / 2, width, bar), 1, 1)
+        pen = QPen(QColor(theme.text), 2.2)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        cx, cy, t = self.width() / 2, self.height() / 2, self._shape
+        for (bx1, by1, bx2, by2), (ax1, ay1, ax2, ay2) in _BURGER_LINES:
+            painter.drawLine(
+                QPointF(cx + bx1 + (ax1 - bx1) * t, cy + by1 + (ay1 - by1) * t),
+                QPointF(cx + bx2 + (ax2 - bx2) * t, cy + by2 + (ay2 - by2) * t),
+            )
+
+
+MENU_MS = 220  # how long the menu takes to fold or open
+# each line: (as a bar, as part of the arrow), the points relative to the middle of the button
+_BURGER_LINES = (
+    ((-9.0, -6.0, 9.0, -6.0), (2.0, -7.0, -6.0, 0.0)),
+    ((-9.0, 0.0, 9.0, 0.0), (-6.0, 0.0, 8.0, 0.0)),
+    ((-9.0, 6.0, 9.0, 6.0), (-6.0, 0.0, 2.0, 7.0)),
+)

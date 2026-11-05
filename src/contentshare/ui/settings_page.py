@@ -56,7 +56,9 @@ SLOW_OPEN_MS = 250  # a Settings screen slower than this to appear is written to
 def _settings_of(config: AppConfig) -> dict[str, Any]:
     """The settings that have boxes on this screen: the window options (theme, folded menu and
     cards) are saved the moment they change and do not count."""
-    return config.model_dump(exclude={"appearance", "sidebar_collapsed", "compact_requests"})
+    return config.model_dump(
+        exclude={"appearance", "sidebar_collapsed", "compact_requests", "setup_done"}
+    )
 
 
 def interval_text(minutes: int) -> str:

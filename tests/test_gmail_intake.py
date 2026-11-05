@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from contentshare.config.models import AppConfig
+from contentshare.config.models import AppConfig, SmartSettings
 from contentshare.gmail.errors import AuthRequiredError
 from contentshare.gmail.intake import build_queries, label_search_name
 from contentshare.storage.db import Database
@@ -130,6 +130,7 @@ def test_label_permission_problem_is_a_warning_not_a_failure(w: MailWorld) -> No
 def test_senders_outside_the_list_are_ignored_and_remembered(w: MailWorld) -> None:
     """A Gmail search can match more loosely than we want, so every message is re-checked."""
     w.gmail.loose_from_match = True
+    w.intake.config = w.config.model_copy(update={"smart": SmartSettings(read_unlisted=False)})
     w.gmail.add(make_message(message_id="evil", from_="Evil <x@notfinance.org>", subject=EXACT))
     w.gmail.add(make_message(message_id="good", subject=EXACT))
     report = w.intake.check_now()

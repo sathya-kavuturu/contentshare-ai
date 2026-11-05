@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -23,6 +24,13 @@ def _text_of(card: Any) -> str:
     )
 
 
+def settle(window: Any) -> None:
+    """Let the menu finish sliding (it animates when the window is shown)."""
+    window._slide.stop()
+    window.side.setFixedWidth(SIDEBAR_NARROW if window.sidebar_collapsed else SIDEBAR_WIDE)
+    window._slide.finished.emit()
+
+
 # --------------------------------------------------------------------------- the menu
 def test_the_menu_folds_to_icons_and_opens_again(rig: Rig) -> None:  # noqa: F811
     window = rig.window
@@ -30,11 +38,13 @@ def test_the_menu_folds_to_icons_and_opens_again(rig: Rig) -> None:  # noqa: F81
     assert not window._brand_name.isHidden()
     assert window.top_toggle.accessibleName() == "Fold the menu"
     window.top_toggle.click()
+    settle(window)
     assert window.sidebar_collapsed and window.side.width() == SIDEBAR_NARROW
     assert window._brand_name.isHidden()
     assert window.top_toggle.toolTip() == "Show the menu names"
     assert window.top_toggle.accessibleName() == "Show the menu"
     window.top_toggle.click()
+    settle(window)
     assert not window.sidebar_collapsed and window.side.width() == SIDEBAR_WIDE
     assert not window._brand_name.isHidden()
 
@@ -205,6 +215,7 @@ def test_the_menu_icon_at_the_top_folds_and_opens_the_menu(rig: Rig) -> None:  #
     assert window.top_toggle.toolTip() == "Fold the menu to icons"
     assert not hasattr(window, "side_toggle")  # no second fold button at the bottom
     window.top_toggle.click()
+    settle(window)
     assert window.sidebar_collapsed and window.side.width() == SIDEBAR_NARROW
     assert window.top_toggle.accessibleName() == "Show the menu"
     assert not window.top_toggle.isHidden()  # still there to open it again
@@ -235,3 +246,29 @@ def test_cards_keep_their_height_and_the_list_scrolls_when_the_window_is_short(
     qtbot.wait(50)
     for c in rig.cards():
         assert c.height() >= c.layout().totalHeightForWidth(c.width())
+
+
+# --------------------------------------------------------------------------- first start
+def test_the_first_start_questions_are_not_asked_again_after_departments_are_deleted(
+    tmp_path: Path,
+) -> None:
+    from contentshare.config.models import AppConfig
+
+    fresh = AppConfig()
+    assert not fresh.setup_done  # nothing is set up yet: the questions are asked
+    dept = {
+        "name": "Finance",
+        "sender_emails": ["a@b.org"],
+        "destination_root": str(tmp_path / "dest"),
+    }
+    configured = AppConfig(source_roots=[str(tmp_path / "src")], departments=[dept])
+    assert configured.setup_done  # remembered once there was something
+    emptied = AppConfig.model_validate({**configured.model_dump(), "departments": []})
+    assert emptied.setup_done  # deleting every department does not start the questions again
+
+
+def test_the_menu_icon_turns_with_the_menu(rig: Rig) -> None:  # noqa: F811
+    window = rig.window
+    assert window.top_toggle._shape == 1.0  # open: an arrow
+    window.set_sidebar_collapsed(True)
+    assert window.top_toggle._shape == 0.0  # folded: three bars

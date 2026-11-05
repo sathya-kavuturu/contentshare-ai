@@ -108,7 +108,7 @@ then approve. See [Smart reading](help:smart) for how it works.
 | Setting | What it does |
 |---|---|
 | **Use the local model (master switch)** | Off: the model is never started. On: it can be used, as set by the next tick and by each department's own tick (Settings → Departments → *Local model*, for emails of that department where the usual reading finds no exact folder names). |
-| **Also read emails from senders that are not in any department** | On: recent mail in your main inbox from other people is read too (automatic senders such as no-reply are left out). Off: only departments' own mail is read. |
+| **Also read emails from senders that are not in any department** | On: recent mail in your main inbox from other people is read too (automatic senders such as no-reply are left out). Off: only departments' own mail is read. Such mail is first searched in the index by its subject and text; with Smart reading on, if nothing is found the model is asked and what it names is searched in the index again; if the model reads it as a content request it is kept (even when the index has nothing for it) and you add the folder yourself; otherwise it is not a content request. |
 | **Show the prompt…** | Shows exactly what the model is sent for each email: the instructions, the layout of the email, the examples, the answer shape. Read-only. |
 | **Model** | **Qwen3 4B** (about 2.5 GB) gives the best results; **Qwen3 1.7B** (about 1.8 GB) is smaller and faster but less exact. Both are open-source (Apache License 2.0). |
 | **Use the graphics card (faster; needs one with 2 GB or more)** | Runs the model on the graphics card. Leave it off if the PC has no separate graphics card or if reading fails. |

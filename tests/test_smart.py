@@ -66,12 +66,13 @@ def test_an_answer_in_the_wrong_shape_is_refused() -> None:
     assert parse_answer(json.dumps({"is_request": "yes"}), "x") is None
     assert parse_answer(json.dumps([1, 2]), "x") is None
     reading = parse_answer(json.dumps({"is_request": True, "folders": "oops"}), "x")
-    assert reading is not None and not reading.is_request  # nothing usable was found
+    assert reading is not None and reading.is_request and reading.folders == ()  # by context
 
 
-def test_a_request_with_no_usable_name_is_not_a_request() -> None:
+def test_a_request_with_no_usable_name_is_still_a_request_by_its_context() -> None:
     reading = parse_answer(answer(folders=["Not In The Email"]), "hello there")
-    assert reading is not None and not reading.is_request and reading.folders == ()
+    assert reading is not None and reading.is_request and reading.folders == ()
+    assert reading.dropped == ("Not In The Email",)
 
 
 def test_confidence_names_and_reason_are_limited() -> None:
@@ -410,10 +411,29 @@ def stranger(
     w.gmail.add(make_message(message_id=message_id, from_=STRANGER, subject=subject, body=body))
 
 
-def test_unlisted_mail_is_ignored_when_smart_reading_is_off(world: MailWorld) -> None:
-    stranger(world, EXISTING)
+def test_unlisted_mail_with_exact_folder_names_waits_for_review_when_smart_reading_is_off(
+    world: MailWorld,
+) -> None:
+    stranger(world, f"Hello\n{EXISTING}\nThanks")
     report = world.intake.check_now()
-    assert report.requests == 0 and report.examined == 0  # the mail is not even fetched
+    assert report.requests == 1 and report.needs_review == 1 and report.ready == 0
+
+
+def test_unlisted_mail_in_other_words_is_left_with_a_hint_when_smart_reading_is_off(
+    world: MailWorld,
+) -> None:
+    stranger(world, "Please share the recording of last week's session")
+    report = world.intake.check_now()
+    assert report.requests == 0 and report.ignored == 1
+    assert any("Smart reading" in w for w in report.warnings)
+
+
+def test_unlisted_mail_is_not_fetched_when_that_choice_is_off(world: MailWorld) -> None:
+    stranger(world, EXISTING)
+    config = world.config.model_copy(update={"smart": SmartSettings(read_unlisted=False)})
+    svc = IntakeService(world.gateway, world.repo, world.index, config, today=lambda: TODAY)
+    report = svc.check_now()
+    assert report.requests == 0 and report.examined == 0
     assert all("category:primary" not in q for q in world.gmail.queries)
 
 
@@ -432,6 +452,7 @@ def test_names_found_by_the_model_become_requests_that_wait(world: MailWorld) ->
     report = service(world, reader).check_now()
     assert reader.calls == 1 and report.smart_read == 1 and report.smart_requests == 1
     rows = world.repo.list_requests()
+    # a name the index does not have is kept too: the person adds the folder by hand
     assert [r["state"] for r in rows] == ["NEEDS_REVIEW", "NEEDS_REVIEW"]
     assert all(r["department"] is None and not r["auto_reply"] for r in rows)
     details = [json.loads(r["query_json"]) for r in rows]
@@ -440,6 +461,25 @@ def test_names_found_by_the_model_become_requests_that_wait(world: MailWorld) ->
     assert any(EXISTING in path for path in first)  # the first is a folder on the server
     assert all("Brand New Talk 77" not in str(c) for c in details[1]["candidates"])
     assert details[0]["reason"] == "Sender is not in any department"  # never ready by itself
+
+
+def test_a_request_by_context_with_no_name_waits_for_a_folder_to_be_added(
+    world: MailWorld,
+) -> None:
+    stranger(world, "Kindly share the recordings for us.")
+    reader = FakeReader(Reading(True, (), 0.9))
+    report = service(world, reader).check_now()
+    assert report.requests == 1 and reader.calls == 1
+    (row,) = world.repo.list_requests()
+    assert row["state"] == "NEEDS_REVIEW" and not row["auto_reply"]
+    assert "Add the folder yourself" in json.loads(row["query_json"])["reason"]
+
+
+def test_the_text_itself_is_searched_before_the_model_is_asked(world: MailWorld) -> None:
+    stranger(world, f"Hello\n{EXISTING}\nThanks")
+    reader = FakeReader(Reading(True, (), 0.9))
+    report = service(world, reader).check_now()
+    assert report.requests == 1 and reader.calls == 0
 
 
 def test_mail_that_is_not_a_request_is_remembered_and_not_read_again(world: MailWorld) -> None:

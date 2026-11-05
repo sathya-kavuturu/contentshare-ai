@@ -378,6 +378,9 @@ class AppConfig(BaseModel):
     appearance: Literal["system", "light", "dark"] = "system"  # follow Windows, or force one
     # Window layout the person chose (remembered, never needed for anything to work)
     user_name: str = ""  # who is using the app (asked when it opens); shown in the History
+    # Set once the first-start questions were answered or put away (or departments existed), so
+    # deleting every department later does not bring them back.
+    setup_done: bool = False
     sidebar_collapsed: bool = False  # the menu on the left folded to icons
     compact_requests: bool = False  # request cards folded to one short line
     auto_reply_default: bool = False
@@ -402,6 +405,8 @@ class AppConfig(BaseModel):
 
     @model_validator(mode="after")
     def _unique(self) -> AppConfig:
+        if self.departments and self.all_roots():
+            self.setup_done = True
         names = [d.name.lower() for d in self.departments]
         if len(names) != len(set(names)):
             raise ValueError("Department names must be unique")

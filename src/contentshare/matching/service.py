@@ -217,6 +217,11 @@ def named_items(
     exactly a folder on the server is looked up like an exact name; any other is searched by
     similarity, and everything that is not clear-cut waits for the person."""
     names = list(dict.fromkeys(names))[:MAX_ITEMS]
+    if not names:  # a request by its context, with no name: the person adds the folder
+        reason = (
+            "The email reads as a content request but names no folder. Add the folder yourself."
+        )
+        return [(RequestItem(program="", raw=""), Triage(RequestState.NEEDS_REVIEW, reason))]
     folders = drop_enclosing(index.find_dirs_named(names, roots))
     files = index.find_files_named([n for n in names if n not in folders], roots)
     pairs: list[tuple[RequestItem, Triage]] = []
@@ -235,6 +240,34 @@ def named_items(
         else:
             pairs.append((request, triage_item(request, index, config, today=today, roots=roots)))
     return pairs
+
+
+FOUND_SCORE = 60.0  # below this a match is a coincidence ("note newsletter" is not "notes")
+
+
+def _found(triage: Triage) -> bool:
+    return any(c.score >= FOUND_SCORE for c in triage.candidates)
+
+
+def search_found(
+    subject: str,
+    body: str,
+    index: ContentIndex,
+    config: AppConfig,
+    *,
+    today: date,
+    roots: list[str] | None = None,
+) -> bool:
+    """Does the email itself (subject and text, no model) name something that is on the server?
+    Exact folder-name lines count, and so does an ordinary reading of the text that finds
+    candidates in the index."""
+    found, _notes = exact_items(subject, body, index, roots, found_only=True)
+    if found:
+        return True
+    parsed = parse_request(subject, body, config.parsing, today=today)
+    return any(
+        _found(triage_item(i, index, config, today=today, roots=roots)) for i in parsed.items
+    )
 
 
 SMART_NOTE = "Read from the email by the smart reader: check each name against the email"

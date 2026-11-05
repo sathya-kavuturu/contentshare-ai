@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Callable
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QEasingCurve, Qt, QTimer, QVariantAnimation
 from PySide6.QtGui import QCloseEvent, QShowEvent
 from PySide6.QtWidgets import (
     QApplication,
@@ -39,7 +40,7 @@ from contentshare.ui.settings_page import SettingsPage
 from contentshare.ui.theme import apply_theme, theme_for
 from contentshare.ui.tray import Tray
 from contentshare.ui.update_card import UpdateCard
-from contentshare.ui.widgets import BurgerButton
+from contentshare.ui.widgets import MENU_MS, BurgerButton
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
@@ -138,6 +139,10 @@ class MainWindow(QMainWindow):
         side_layout.setContentsMargins(0, 0, 0, 14)
         side_layout.setSpacing(4)
         # the menu icon at the very top folds the menu to icons and opens it again
+        self._slide = QVariantAnimation(self)
+        self._slide.setDuration(MENU_MS)
+        self._slide.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._slide.valueChanged.connect(lambda w: self.side.setFixedWidth(int(w)))
         self.top_toggle = BurgerButton()
         self.top_toggle.clicked.connect(lambda _c=False: self.toggle_sidebar())
         top_row = QHBoxLayout()
@@ -174,18 +179,49 @@ class MainWindow(QMainWindow):
         return self._sidebar_collapsed
 
     def toggle_sidebar(self) -> None:
-        self.set_sidebar_collapsed(not self._sidebar_collapsed)
+        self.set_sidebar_collapsed(not self._sidebar_collapsed, animate=self.isVisible())
 
-    def set_sidebar_collapsed(self, collapsed: bool, *, remember: bool = True) -> None:
+    def _stop_slide(self) -> None:
+        """Stop a slide in progress without running what it was going to do when it ended."""
+        with contextlib.suppress(RuntimeError, TypeError):
+            self._slide.finished.disconnect()
+        self._slide.stop()
+
+    def _slide_sidebar(self, collapsed: bool, apply_content: Callable[[], None]) -> None:
+        """Slide the menu to its new width. The names are put away when it has narrowed and
+        shown again as it starts to widen, so they are never squeezed into a half-folded menu."""
+        target = SIDEBAR_NARROW if collapsed else SIDEBAR_WIDE
+        self._stop_slide()
+        if not collapsed:
+            apply_content()
+        else:
+            self._slide.finished.connect(apply_content)
+        self._slide.setStartValue(self.side.width())
+        self._slide.setEndValue(target)
+        self._slide.start()
+
+    def set_sidebar_collapsed(
+        self, collapsed: bool, *, remember: bool = True, animate: bool = False
+    ) -> None:
         """Fold the menu to icons, or show the names again. ``remember`` keeps the choice for the
-        next start (not done when it is opened only to show an update)."""
+        next start (not done when it is opened only to show an update). ``animate`` slides it."""
         self._sidebar_collapsed = collapsed
-        self.side.setFixedWidth(SIDEBAR_NARROW if collapsed else SIDEBAR_WIDE)
-        self._brand_name.setVisible(not collapsed)
-        if self._brand_row is not None:
-            self._brand_row.setContentsMargins(*((20, 8, 20, 14) if collapsed else (20, 8, 16, 14)))
-        self.nav.set_collapsed(collapsed)
-        self._update_holder.setVisible(not collapsed)
+
+        def content() -> None:
+            self._brand_name.setVisible(not collapsed)
+            if self._brand_row is not None:
+                margins = (20, 8, 20, 14) if collapsed else (20, 8, 16, 14)
+                self._brand_row.setContentsMargins(*margins)
+            self.nav.set_collapsed(collapsed)
+            self._update_holder.setVisible(not collapsed)
+
+        if animate:
+            self._slide_sidebar(collapsed, content)
+        else:
+            self._stop_slide()
+            self.side.setFixedWidth(SIDEBAR_NARROW if collapsed else SIDEBAR_WIDE)
+            content()
+        self.top_toggle.show_open(not collapsed, animate=animate)
         tip = "Show the menu names" if collapsed else "Fold the menu to icons"
         self.top_toggle.setToolTip(tip)
         self.top_toggle.setAccessibleName("Show the menu" if collapsed else "Fold the menu")

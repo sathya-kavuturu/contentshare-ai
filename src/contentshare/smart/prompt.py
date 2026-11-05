@@ -26,6 +26,8 @@ SYSTEM = (
     "- A date range written before a name (for example 'Nov 22-28') is not part of the name.\n"
     "- Words that ask (please, kindly, share, send) and words that describe the file "
     "(recording, video, folder, link) are not part of the name.\n"
+    "- If the email asks for content but names no program or folder, answer is_request true "
+    "with an empty list.\n"
     "- Greetings, thanks, signatures and quoted older messages are not requests.\n"
     "- If the email is a newsletter, notification, invoice, meeting invite or a plain question, "
     "answer is_request false with an empty list.\n"

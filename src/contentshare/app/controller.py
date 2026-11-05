@@ -78,6 +78,7 @@ UI_OPTIONS = (
     "sidebar_collapsed",
     "compact_requests",
     "user_name",
+    "setup_done",
 )  # saved at once, see set_ui_option
 
 

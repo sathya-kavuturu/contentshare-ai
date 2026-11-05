@@ -22,7 +22,7 @@ from contentshare.gmail.sender_auth import verify_sender
 from contentshare.index import ContentIndex
 from contentshare.jobs.states import RequestState
 from contentshare.matching import process_email_requests, process_named_requests
-from contentshare.matching.service import exact_items
+from contentshare.matching.service import exact_items, search_found
 from contentshare.parsing.request import parse_request
 from contentshare.parsing.text import clean_body
 from contentshare.smart.runtime import SmartError
@@ -179,7 +179,7 @@ class IntakeService:
             for message_id in self.gateway.list_message_ids(query, room):
                 seen.setdefault(message_id)
         room = self.config.gmail.max_messages - len(seen)
-        if self.config.smart.enabled and self.config.smart.read_unlisted and room > 0:
+        if self.config.smart.read_unlisted and room > 0:
             unlisted = build_unlisted_query(self.config)
             for message_id in self.gateway.list_message_ids(unlisted, room):
                 seen.setdefault(message_id)
@@ -194,7 +194,7 @@ class IntakeService:
             return self._ignore(msg, "sent by this account", report)
         dept = self.config.department_for_sender(msg.sender_email)
         if dept is None:
-            if self.config.smart.enabled and self.config.smart.read_unlisted:
+            if self.config.smart.read_unlisted:
                 return self._handle_unlisted(msg, report)
             return self._ignore(msg, "sender is not in any department", report)
         if self._is_followup_without_request(msg):
@@ -284,21 +284,35 @@ class IntakeService:
         for the person: there is no department, so nothing can be ready or replied to by itself."""
         if self._is_followup_without_request(msg):
             return self._ignore(msg, "reply in a handled conversation with no new request", report)
-        found, _notes = exact_items(msg.subject, msg.body, self.index, None, found_only=True)
+        today = self._today()
+        # 1. the subject and the text, looked up in the index
+        found = search_found(msg.subject, msg.body, self.index, self.config, today=today)
         names: list[str] = []
         reading: Reading | None = None
         if not found:
+            if not self.config.smart.enabled:
+                self._warn_once(
+                    report,
+                    "Mail from people in no department only becomes a request when the index "
+                    "has what it names; turn on Smart reading (Settings) to understand other "
+                    "wording",
+                )
+                return self._ignore(msg, "sender is not in any department", report)
+            # 2. the model reads it, and what it names is looked up in the index again
             reading = self._read_with_model(msg, report)
             if reading is None:
                 return None  # the model could not be used now: look at it again next time
             if not reading.is_request:
+                # 3. the model reads it as no content request either
                 self._log_reading(reading, [], msg)
                 return self._ignore(msg, NOT_A_REQUEST, report)
+            # a content request by its context: kept even when the index has nothing for the
+            # names, so the person can add the folder by hand
             names = list(reading.folders)
         email_id = self._record_unlisted(msg)
         if email_id is None:
             return None
-        if names:
+        if reading is not None:
             ids = process_named_requests(
                 self.repo, self.index, self.config, email_id, names, today=self._today()
             )

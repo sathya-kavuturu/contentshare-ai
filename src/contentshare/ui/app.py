@@ -83,7 +83,12 @@ def build_controller(config_path: Path | None = None) -> Controller:
 
 
 def needs_first_run(controller: Controller) -> bool:
-    return not controller.config.departments or not controller.config.all_roots()
+    """Only until the first-start questions were answered or put away once: a person who later
+    deletes every department is not asked everything again."""
+    config = controller.config
+    if config.setup_done:
+        return False
+    return not config.departments or not config.all_roots()
 
 
 def parse_args(argv: list[str]) -> tuple[argparse.Namespace, list[str]]:
@@ -166,6 +171,7 @@ def _run(app: QApplication, instance: SingleInstance, *, background: bool) -> in
         if wizard.exec() and wizard.result_config is not None:
             save_config(wizard.result_config, default_config_path())
             controller.apply_config(wizard.result_config, persist=False)
+        controller.set_ui_option("setup_done", True)  # answered or cancelled: not asked again
 
     tray = Tray() if Tray.available() else None
     if tray is not None:
