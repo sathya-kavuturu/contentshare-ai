@@ -256,7 +256,11 @@ WEEK_EMAIL = (
 
 
 def _make_week(h: Harness) -> None:  # noqa: F811
-    for folder in ("Amber Step 4 English v005", "Amber Step 4 Hindi v002", "Amber 7 Days Hindi 02-nov-2026"):
+    for folder in (
+        "Amber Step 4 English v005",
+        "Amber Step 4 Hindi v002",
+        "Amber 7 Days Hindi 02-nov-2026",
+    ):
         (h.world.storage / "Amber" / folder).mkdir(parents=True)
         (h.world.storage / "Amber" / folder / "a.mp4").write_bytes(b"x" * 10)
     (h.world.storage / "Marathi").mkdir()
@@ -273,7 +277,10 @@ def _make_week(h: Harness) -> None:  # noqa: F811
         ("22-28 Nov 2026 - Amber Step 4", "Amber Step 4"),
         ("22nd of November Amber Step 4", "Amber Step 4"),
         ("Nov 21-27 Amber 7 Days Hindi 02-nov-2026", "Amber 7 Days Hindi 02-nov-2026"),
-        ("Amber Step 4 Hindi Nov 22-28", None),  # a date after the name stays: it may be in the name
+        (
+            "Amber Step 4 Hindi Nov 22-28",
+            None,
+        ),  # a date after the name stays: it may be in the name
         ("Marathi Orchid 6th of November", None),
         ("Nov 22-28", None),  # nothing left
     ],

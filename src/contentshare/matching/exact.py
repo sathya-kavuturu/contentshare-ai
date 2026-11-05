@@ -44,8 +44,9 @@ _LEADING_DATE = re.compile(
 class WantedName:
     name: str
     explicit: bool  # a list item, a quoted name or a folder-looking word: report it if missing
-    # What is left when a date written before the name is dropped ("Nov 22-28 Amber Step 4 Hindi v002"
-    # is the folder "Amber Step 4 Hindi v002"). Tried only when nothing is named exactly ``name``.
+    # What is left when a date written before the name is dropped ("Nov 22-28 Amber Step 4 Hindi
+    # v002" is the folder "Amber Step 4 Hindi v002"). Tried only when nothing is named exactly
+    # ``name``.
     alternates: tuple[str, ...] = ()
 
 

@@ -88,7 +88,9 @@ def parse_answer(text: str, email_text: str) -> Reading | None:
         if normalise(name) not in haystack:
             dropped.append(name)  # not written in the email: invented, or put there by the email
             continue
-        name = without_leading_date(name) or name  # "Nov 22-28 Amber Step 4" is the folder "Amber Step 4"
+        name = (
+            without_leading_date(name) or name
+        )  # "Nov 22-28 Amber Step 4" is the folder "Amber Step 4"
         if name.casefold() not in {k.casefold() for k in kept}:
             kept.append(name)
         if len(kept) >= MAX_NAMES:
