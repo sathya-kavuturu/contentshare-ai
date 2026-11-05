@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shiboken6
 from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFontMetrics, QPainter, QPaintEvent, QPen, QResizeEvent
 from PySide6.QtWidgets import (
@@ -216,6 +217,8 @@ class StackBody(QWidget):
         widget.deleteLater()
 
     def fit(self) -> None:
+        if not shiboken6.isValid(self) or not shiboken6.isValid(self.stack):
+            return  # a deferred call that arrives after the window was closed
         margins = self.stack.contentsMargins()
         width = max(200, self.width() - margins.left() - margins.right())
         for i in range(self.stack.count()):
