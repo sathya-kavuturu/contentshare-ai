@@ -105,7 +105,8 @@ def test_processed_label_is_added_and_excluded_next_time(w: MailWorld) -> None:
     assert w.gmail.labels["Label_1"] == "ContentShareAI/Processed"
     w.intake.check_now()
     # the second search no longer even lists the labelled message
-    assert w.gateway.list_message_ids(w.gmail.queries[-1], 10) == []
+    department = [q for q in w.gmail.queries if q.startswith("from:(")][-1]
+    assert w.gateway.list_message_ids(department, 10) == []
 
 
 def test_labels_off_means_no_label_calls(w: MailWorld) -> None:

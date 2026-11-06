@@ -99,13 +99,12 @@ def build_unlisted_query(config: AppConfig) -> str:
     """Recent mail in the main inbox from anyone (used only when smart reading is on). Mail sent
     by this account and mail from automatic senders is left out; the program still checks every
     message again after it is read."""
-    query = (
+    # No "processed" label filter here: mail left alone by an earlier version carries that label,
+    # and Gmail would hide it for good. The database already stops any message being done twice.
+    return (
         f"in:inbox category:primary newer_than:{config.gmail.lookback_days}d -from:me "
         f"-from:({AUTOMATIC_SENDERS})"
     )
-    if config.gmail.apply_label:
-        query += f" -label:{label_search_name(config.gmail.processed_label)}"
-    return query
 
 
 class IntakeService:

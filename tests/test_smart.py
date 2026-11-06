@@ -588,7 +588,7 @@ def test_the_search_for_unlisted_mail_leaves_out_automatic_senders(world: MailWo
     config = service(world).config
     query = build_unlisted_query(config)
     assert "in:inbox" in query and "-from:me" in query and "noreply" in query
-    assert "-label:contentshareai-processed" in query
+    assert "-label:" not in query  # mail labelled by an earlier version must stay visible
     world.gmail.add(
         make_message(message_id="n1", from_="Robot <noreply@elsewhere.com>", body=EXISTING)
     )
@@ -721,3 +721,11 @@ def test_mail_ignored_by_an_earlier_version_is_read_again_when_its_sender_has_no
     )  # fmt: skip
     report = world.intake.check_now()
     assert report.examined == 1 and report.requests == 1
+
+
+def test_unlisted_mail_labelled_by_an_earlier_version_is_still_found(world: MailWorld) -> None:
+    world.gmail.labels["Label_1"] = world.config.gmail.processed_label
+    world.gmail.add(
+        make_message(message_id="old1", from_=STRANGER, body=EXISTING, labels=("INBOX", "Label_1"))
+    )
+    assert service(world)._new_ids() == ["old1"]
