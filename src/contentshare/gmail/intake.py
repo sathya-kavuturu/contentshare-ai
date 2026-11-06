@@ -44,6 +44,9 @@ UNREADABLE_SENDER = "unreadable@invalid.example"
 NOT_A_REQUEST = "not recognised as a content request"
 NOT_IN_DEPARTMENT = "sender is not in any department"
 # Mail from automatic senders is never worth reading for a request.
+# "category:primary" returns nothing through the Gmail API on some accounts, so the other tabs are
+# left out instead, which leaves the main one.
+OTHER_TABS = "-category:promotions -category:updates -category:social -category:forums"
 AUTOMATIC_SENDERS = (
     "noreply OR no-reply OR donotreply OR do-not-reply OR mailer-daemon OR notifications"
 )
@@ -102,7 +105,7 @@ def build_unlisted_query(config: AppConfig) -> str:
     # No "processed" label filter here: mail left alone by an earlier version carries that label,
     # and Gmail would hide it for good. The database already stops any message being done twice.
     return (
-        f"in:inbox category:primary newer_than:{config.gmail.lookback_days}d -from:me "
+        f"in:inbox newer_than:{config.gmail.lookback_days}d -from:me {OTHER_TABS} "
         f"-from:({AUTOMATIC_SENDERS})"
     )
 

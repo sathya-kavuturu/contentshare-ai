@@ -434,7 +434,7 @@ def test_unlisted_mail_is_not_fetched_when_that_choice_is_off(world: MailWorld) 
     svc = IntakeService(world.gateway, world.repo, world.index, config, today=lambda: TODAY)
     report = svc.check_now()
     assert report.requests == 0 and report.examined == 0
-    assert all("category:primary" not in q for q in world.gmail.queries)
+    assert all("-category:" not in q for q in world.gmail.queries)
 
 
 def test_lines_that_are_exact_folder_names_are_found_without_the_model(world: MailWorld) -> None:
@@ -588,6 +588,7 @@ def test_the_search_for_unlisted_mail_leaves_out_automatic_senders(world: MailWo
     config = service(world).config
     query = build_unlisted_query(config)
     assert "in:inbox" in query and "-from:me" in query and "noreply" in query
+    assert "-category:promotions" in query and "category:primary" not in query
     assert "-label:" not in query  # mail labelled by an earlier version must stay visible
     world.gmail.add(
         make_message(message_id="n1", from_="Robot <noreply@elsewhere.com>", body=EXISTING)
