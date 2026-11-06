@@ -218,6 +218,8 @@ QPushButton:flat:focus, QPushButton[ghost="true"]:focus {{ border: 2px solid {t.
 QPushButton[ghost="true"][danger="true"] {{ color: {t.tones["error"].fg}; }}
 QPushButton[fold="true"] {{ padding: 0; min-width: 28px; max-width: 28px; min-height: 28px;
     max-height: 28px; font-size: 15px; }}
+QPushButton[fold="true"]:focus, QPushButton[fold="true"]:flat:focus {{
+    border: 2px solid {t.accent}; padding: 0; }}
 
 QLineEdit, QPlainTextEdit, QTextEdit, QTextBrowser, QComboBox, QSpinBox, QTimeEdit {{
     background: {t.input_bg}; color: {t.text}; border: 1px solid {t.border_strong};

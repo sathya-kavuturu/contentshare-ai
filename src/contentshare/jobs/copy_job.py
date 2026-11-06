@@ -9,7 +9,12 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from contentshare.config.models import AppConfig, Department, inside_system_folder
+from contentshare.config.models import (
+    OPEN_DEPARTMENT,
+    AppConfig,
+    Department,
+    inside_system_folder,
+)
 from contentshare.copy_engine import (
     MIB,
     Control,
@@ -79,6 +84,18 @@ def resolve_source(config: AppConfig, dept: Department, text: str) -> Path:
     protected = inside_system_folder(str(path))
     if protected:
         raise PathSafetyError(f"Content inside {protected} cannot be copied")
+    return path
+
+
+def resolve_destination(dept: Department, text: str) -> Path:
+    """Where the copy goes: inside the department's folder, or, with no department set up, any
+    folder the person picked (never inside Windows or Program Files)."""
+    if dept.name != OPEN_DEPARTMENT:
+        return resolve_within(dept.destination_root, text)
+    path = resolve_anywhere(text)
+    protected = inside_system_folder(str(path))
+    if protected:
+        raise PathSafetyError(f"Copies must not go into {protected}")
     return path
 
 
@@ -153,7 +170,7 @@ class CopyJobRunner:
             raise ValueError("Request has no source or destination path")
 
         src = resolve_source(self.config, dept, row["source_path"])
-        dst = resolve_within(dept.destination_root, row["destination_path"])
+        dst = resolve_destination(dept, row["destination_path"])
         if paths_overlap(src, dst):
             raise PathSafetyError("Source and destination overlap")
 
@@ -219,7 +236,7 @@ class CopyJobRunner:
         return JobOutcome(request_id, RequestState.FAILED, reason, tree)
 
     def _department(self, name: str | None) -> Department:
-        for dept in self.config.departments:
-            if dept.name == name:
-                return dept
-        raise ValueError(f"Department {name!r} is not in the settings")
+        dept = self.config.department_for(name)
+        if dept is None:
+            raise ValueError(f"Department {name!r} is not in the settings")
+        return dept

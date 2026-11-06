@@ -193,7 +193,7 @@ class CandidateDialog(QDialog):
 
     def _start_folder(self) -> str:
         config = self._controller.config
-        dept = next((x for x in config.departments if x.name == self._view.department), None)
+        dept = config.department_for(self._view.department)
         roots = config.roots_for(dept)
         return roots[0] if roots else ""
 
@@ -212,10 +212,7 @@ class CandidateDialog(QDialog):
             self._browsed_pick(chosen)
 
     def _pick_hint(self) -> str:
-        dept = next(
-            (x for x in self._controller.config.departments if x.name == self._view.department),
-            None,
-        )
+        dept = self._controller.config.department_for(self._view.department)
         if dept is not None and dept.may_pick_anywhere:
             return "Your pick is first. It can be anywhere on this PC or network."
         return "Your pick is first. It must be inside a storage folder in Settings."
@@ -262,13 +259,21 @@ class CandidateDialog(QDialog):
 
 
 class DestinationDialog(QDialog):
-    def __init__(self, root: str, current: str, parent: QWidget | None = None):
+    def __init__(
+        self, root: str, current: str, parent: QWidget | None = None, *, anywhere: bool = False
+    ):
         super().__init__(parent)
         self.setWindowTitle("Copy to")
         self.resize(640, 140)
         self._root = root
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel(f"Must be inside the department folder:\n{root}"))
+        layout.addWidget(
+            QLabel(
+                "Any folder on this PC or network (not Windows or Program Files)."
+                if anywhere
+                else f"Must be inside the department folder:\n{root}"
+            )
+        )
         row = QHBoxLayout()
         self.path = QLineEdit(current)
         browse = QPushButton("Browse…")

@@ -616,8 +616,9 @@ def test_the_department_is_chosen_before_the_folder_can_be_used(h: Harness) -> N
     email_id = _unlisted_request(h)
     (view,) = h.ctl.views()
     candidate = view.candidates[0]
-    with pytest.raises(ActionError, match="Choose department"):
-        h.ctl.choose(view.id, int(candidate.item_id or 0))
+    # choosing a department is only a suggestion: without one the first department is used
+    h.ctl.choose(view.id, int(candidate.item_id or 0))
+    assert h.ctl.view(view.id).state == "READY"
     with pytest.raises(ActionError):
         h.ctl.assign_department(email_id, "No Such Department")
     h.ctl.assign_department(email_id, "Media Team")
@@ -730,3 +731,22 @@ def test_unlisted_mail_labelled_by_an_earlier_version_is_still_found(world: Mail
         make_message(message_id="old1", from_=STRANGER, body=EXISTING, labels=("INBOX", "Label_1"))
     )
     assert service(world)._new_ids() == ["old1"]
+
+
+def test_with_no_department_content_and_destination_can_be_anywhere(
+    h: Harness,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    from contentshare.config.models import OPEN_DEPARTMENT
+
+    config = h.ctl.config.model_copy(update={"departments": []})
+    h.ctl.config = config
+    dept = config.department_for(None)
+    assert dept is not None and dept.name == OPEN_DEPARTMENT
+    assert dept.may_pick_anywhere and dept.search_whole_pc
+    assert config.department_for("Nobody") is None
+    elsewhere = tmp_path / "anywhere" / "copies"
+    elsewhere.mkdir(parents=True)
+    from contentshare.jobs.copy_job import resolve_destination
+
+    assert resolve_destination(dept, str(elsewhere)) == elsewhere.resolve()

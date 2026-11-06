@@ -5,6 +5,7 @@ from __future__ import annotations
 import ntpath
 import os
 import re
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -63,6 +64,9 @@ def _check_root(value: str) -> str:
     except PathSafetyError as exc:
         raise ValueError(str(exc)) from exc
     return value.rstrip("\\/") if len(value.rstrip("\\/")) > 2 else value
+
+
+OPEN_DEPARTMENT = "No department"
 
 
 class Department(BaseModel):
@@ -166,6 +170,26 @@ class Department(BaseModel):
     def matches_sender(self, email: str) -> bool:
         email = email.strip().lower()
         return email in self.sender_emails or email.rpartition("@")[2] in self.sender_domains
+
+
+def open_department() -> Department:
+    """Used when no department is set up: content can be browsed for anywhere on this PC (or
+    searched for on it) and copied to any folder the person picks. The folder named here is only
+    where copies go until a different one is chosen."""
+    # built without the check that a department lists senders: this one belongs to nobody
+    return Department.model_construct(
+        name=OPEN_DEPARTMENT,
+        sender_emails=[],
+        sender_domains=[],
+        destination_root=str(Path.home() / "Documents" / "ContentShare"),
+        subfolder_pattern="{program}",
+        reply_template=None,
+        exact_folder_names=False,
+        browse_anywhere=True,
+        source_roots=[],
+        search_whole_pc=True,
+        use_local_llm=False,
+    )
 
 
 class CopySettings(BaseModel):
@@ -441,6 +465,17 @@ class AppConfig(BaseModel):
                     f"'{domain_owner}'; make them consistent"
                 )
         return self
+
+    def department_for(self, name: str | None) -> Department | None:
+        """The department with this name. A request from a sender in no department (``name`` is
+        None) uses the first one, or, when none is set up, the open one that can take content
+        from anywhere on this PC and copy it to any folder. None: a name that is not set up."""
+        for dept in self.departments:
+            if dept.name == name:
+                return dept
+        if name is None:
+            return self.departments[0] if self.departments else open_department()
+        return None
 
     def roots_for(self, dept: Department | None) -> list[str]:
         """The folders this department's requests are searched in: its own, or else the storage

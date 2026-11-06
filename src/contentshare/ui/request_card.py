@@ -710,16 +710,18 @@ class RequestCard(QFrame):
         )
 
     def _edit_destination(self, view: RequestView) -> None:
-        dept = next(
-            (d for d in self.ctx.controller.config.departments if d.name == view.department),
-            None,
-        )
+        dept = self.ctx.controller.config.department_for(view.department)
         if dept is None:
             QMessageBox.warning(
                 self, "Destination", "This sender's department is not in the settings."
             )
             return
-        dialog = DestinationDialog(dept.destination_root, view.destination_path or "", self)
+        dialog = DestinationDialog(
+            dept.destination_root,
+            view.destination_path or "",
+            self,
+            anywhere=not self.ctx.controller.config.departments and view.department is None,
+        )
         if dialog.exec():
             try:
                 self.ctx.controller.set_destination(view.id, dialog.value())

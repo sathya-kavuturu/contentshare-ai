@@ -53,6 +53,7 @@ from contentshare.jobs.copy_job import (
     JobOutcome,
     options_from_config,
     paths_overlap,
+    resolve_destination,
     resolve_source,
 )
 from contentshare.jobs.queue import CopyQueue
@@ -492,15 +493,10 @@ class Controller:
         return row
 
     def _department(self, name: str | None) -> Any:
-        for dept in self.config.departments:
-            if dept.name == name:
-                return dept
-        if name is None:
-            raise ActionError(
-                "This sender is in no department yet. Press “Choose department…” on the "
-                "request first."
-            )
-        raise ActionError(f"“{name}” is not a department in the settings; add it first")
+        dept = self.config.department_for(name)
+        if dept is None:
+            raise ActionError(f"“{name}” is not a department in the settings; add it first")
+        return dept
 
     def _transition(self, request_id: int, target: RequestState, **kwargs: Any) -> None:
         self._require_sign_in()
@@ -524,9 +520,7 @@ class Controller:
         email = self.repo.get_email(email_id)
         if email is None:
             raise ActionError("This request no longer exists")
-        if not email.get("department"):
-            raise ActionError("Choose the department for this request first (Choose department…)")
-        if self._department_or_none(email.get("department")) is None:
+        if email.get("department") and self._department_or_none(email.get("department")) is None:
             raise ActionError("This sender's department is not in the settings; add it first")
         number = max((r["line_no"] for r in self.repo.requests_of_email(email_id)), default=0) + 1
         item = RequestItem(program=name, raw=name)
@@ -643,7 +637,7 @@ class Controller:
         return replace(item, program=text) if not item.program.strip() else item
 
     def _department_or_none(self, name: str | None) -> Department | None:
-        return next((d for d in self.config.departments if d.name == name), None)
+        return self.config.department_for(name)
 
     def pc_search_allowed(self, request_id: int) -> bool:
         """True if the request's department may fall back to searching this whole PC."""
@@ -824,7 +818,7 @@ class Controller:
             raise ActionError("The destination can only be changed before approval")
         dept = self._department(row["department"])
         try:
-            resolved = resolve_within(dept.destination_root, path.strip())
+            resolved = resolve_destination(dept, path.strip())
         except PathSafetyError as exc:
             raise ActionError(
                 f"The destination must be inside {dept.destination_root}: {exc}"
@@ -936,7 +930,7 @@ class Controller:
             raise ActionError("Choose the content and a destination first")
         try:
             src = resolve_source(self.config, dept, row["source_path"])
-            dst = resolve_within(dept.destination_root, row["destination_path"])
+            dst = resolve_destination(dept, row["destination_path"])
         except PathSafetyError as exc:
             raise ActionError(f"Path not allowed: {exc}") from exc
         if paths_overlap(src, dst):
