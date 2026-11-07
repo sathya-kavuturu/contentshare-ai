@@ -35,6 +35,7 @@ from contentshare.ui.dialogs import LoginDialog
 from contentshare.ui.help_page import HelpPage
 from contentshare.ui.history_page import HistoryPage
 from contentshare.ui.icons import app_icon
+from contentshare.ui.mailbox_page import MailboxPage
 from contentshare.ui.nav import NavList
 from contentshare.ui.requests_page import RequestsPage, summarize_check
 from contentshare.ui.settings_page import SettingsPage
@@ -45,7 +46,7 @@ from contentshare.ui.widgets import MENU_MS, BurgerButton
 from contentshare.ui.widgets import Label as QLabel
 from contentshare.ui.widgets import SafeMessageBox as QMessageBox
 
-PAGES = ["Requests", "Active copies", "History", "Settings", "Help", "Developer"]
+PAGES = ["Requests", "Active copies", "History", "Mailbox", "Settings", "Help", "Developer"]
 
 SIDEBAR_WIDE, SIDEBAR_NARROW = 236, 68  # the menu on the left: full, or folded to icons
 WARM_UP_DELAY_MS = 800
@@ -120,11 +121,13 @@ class MainWindow(QMainWindow):
         self.requests = RequestsPage(self.ctx)
         self.copies = CopiesPage(self.ctx)
         self.history = HistoryPage(self.ctx)
+        self.mailbox = MailboxPage(self.ctx)
         self.settings = SettingsPage(self.ctx)
         self.help = HelpPage()
         self.developer = DeveloperPage(self.ctx)
         for page in (
-            self.requests, self.copies, self.history, self.settings, self.help, self.developer,
+            self.requests, self.copies, self.history, self.mailbox, self.settings, self.help,
+            self.developer,
         ):  # fmt: skip
             self.stack.addWidget(page)
         body.addWidget(self.stack, 1)
@@ -412,6 +415,8 @@ class MainWindow(QMainWindow):
             self.copies.refresh()
         elif PAGES[row] == "History":
             self.history.refresh()
+        elif PAGES[row] == "Mailbox":
+            self.mailbox.refresh()
         elif PAGES[row] == "Settings":
             self.settings.show_page()
 
@@ -419,6 +424,7 @@ class MainWindow(QMainWindow):
         self.requests.on_event(event)
         self.copies.on_event(event)
         self.history.on_event(event)
+        self.mailbox.on_event(event)
         if event.kind == "copy_finished" or event.kind in ("reply_sent", "reply_problem"):
             self.say(f"Request #{event.request_id}: {event.message}")
             self._toast(for_event(event))

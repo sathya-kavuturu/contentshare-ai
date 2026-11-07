@@ -403,7 +403,7 @@ def test_help_describes_every_setting_by_the_name_shown_on_screen(rig: Rig) -> N
         assert name in help_text, f"Help does not mention the setting “{name}”"
     labels = {w.text() for w in settings.findChildren(QLabel)}  # includes the form's row captions
     for phrase in (
-        "How often", "Time of day", "Client file", "Look back", "Emails per check",
+        "How often", "Time of day", "Client file", "First check reads back", "Emails per check",
         "Mark Ready when at least", "Verification checksum", "Copies at the same time",
         "Attempts per file", "Default reply text", "Storage folders to search",
     ):  # fmt: skip
@@ -444,7 +444,7 @@ def test_the_search_help_quotes_the_real_defaults_and_messages() -> None:
 
     text = {t.slug: t.markdown for t in load_topics()}["search"]
     config = AppConfig()
-    assert f"**Look back** days ({config.gmail.lookback_days} by default" in text
+    assert f"**First check reads back** days, {config.gmail.first_scan_days} by default" in text
     assert f"**Emails per check** of them ({config.gmail.max_messages} by default" in text
     assert f"({config.matching.auto_ready_score} by default" in text
     assert f"({config.matching.ambiguity_gap} by default" in text

@@ -191,6 +191,7 @@ class Repository:
         ignored_reason: str | None = None,
         rfc_message_id: str | None = None,
         references_header: str | None = None,
+        labels: str = "",
     ) -> int | None:
         """Record an email. Returns its id, or ``None`` if this message was already recorded."""
         with self.db.transaction() as conn:
@@ -199,8 +200,8 @@ class Repository:
                 # raises on CHECK/NOT NULL violations instead of silently dropping the email.
                 "INSERT INTO emails (gmail_message_id, gmail_thread_id, sender_email, "
                 "sender_name, department, subject, snippet, received_at, auth_status, "
-                "ignored_reason, created_at, rfc_message_id, references_header) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ignored_reason, created_at, rfc_message_id, references_header, labels) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(gmail_message_id) DO NOTHING",
                 (
                     gmail_message_id,
@@ -216,6 +217,7 @@ class Repository:
                     _now(),
                     rfc_message_id,
                     references_header,
+                    labels,
                 ),
             )
             if cur.rowcount == 0:
@@ -240,11 +242,87 @@ class Repository:
             return [
                 dict(r)
                 for r in conn.execute(
-                    "SELECT id, sender_email, sender_name, subject, received_at, ignored_reason "
+                    "SELECT id, gmail_message_id, sender_email, sender_name, subject, snippet, "
+                    "received_at, ignored_reason, labels "
                     "FROM emails WHERE ignored_reason IS NOT NULL ORDER BY id DESC LIMIT ?",
                     (limit,),
                 )
             ]
+
+    def mailbox(self, limit: int = 2000) -> list[dict[str, Any]]:
+        """Every mail that was looked at, newest first. ``lines`` is how many request lines it
+        made: none means it was left alone (``ignored_reason`` says why) or held no names."""
+        with self.db.read() as conn:
+            return [
+                dict(r)
+                for r in conn.execute(
+                    "SELECT e.id, e.gmail_message_id, e.sender_email, e.sender_name, "
+                    "e.department, e.subject, e.snippet, e.received_at, e.ignored_reason, "
+                    "e.labels, (SELECT COUNT(*) FROM requests r WHERE r.email_id = e.id) AS lines "
+                    "FROM emails e ORDER BY e.received_at DESC, e.id DESC LIMIT ?",
+                    (limit,),
+                )
+            ]
+
+    def convert_ignored_email(
+        self, email_id: int, *, department: str | None, snippet: str, auth_status: str
+    ) -> bool:
+        """A left-alone mail the person says is a request: it stops being "left alone" and gets
+        the department, text and sender check that a request needs. False if it was not one."""
+        with self.db.transaction() as conn:
+            done = conn.execute(
+                "UPDATE emails SET ignored_reason = NULL, department = ?, snippet = ?, "
+                "auth_status = ? WHERE id = ? AND ignored_reason IS NOT NULL",
+                (department, snippet[:SNIPPET_MAX], auth_status, email_id),
+            ).rowcount
+            if done:
+                self._audit(conn, "user", "email_moved_to_requests", None, {"email_id": email_id})
+        return bool(done)
+
+    # --- where the last check got to, and senders the person always skips or accepts -----
+    def scan_value(self, key: str) -> str | None:
+        with self.db.read() as conn:
+            row = conn.execute("SELECT value FROM scan_state WHERE key = ?", (key,)).fetchone()
+        return str(row["value"]) if row else None
+
+    def set_scan_value(self, key: str, value: str | None) -> None:
+        with self.db.transaction() as conn:
+            if value is None:
+                conn.execute("DELETE FROM scan_state WHERE key = ?", (key,))
+            else:
+                conn.execute(
+                    "INSERT INTO scan_state (key, value) VALUES (?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (key, value),
+                )
+
+    def sender_rule(self, sender: str) -> str | None:
+        with self.db.read() as conn:
+            row = conn.execute(
+                "SELECT action FROM sender_rules WHERE sender = ?", (sender.lower(),)
+            ).fetchone()
+        return str(row["action"]) if row else None
+
+    def set_sender_rule(self, sender: str, action: str | None) -> None:
+        """``"skip"``, ``"request"``, or ``None`` to remove the rule."""
+        with self.db.transaction() as conn:
+            if action is None:
+                conn.execute("DELETE FROM sender_rules WHERE sender = ?", (sender.lower(),))
+            else:
+                conn.execute(
+                    "INSERT INTO sender_rules (sender, action, created_at) VALUES (?, ?, ?) "
+                    "ON CONFLICT(sender) DO UPDATE SET action = excluded.action",
+                    (sender.lower(), action, _now()),
+                )
+            self._audit(conn, "user", "sender_rule", None, {"sender": sender, "action": action})
+
+    def get_email_by_gmail_id(self, gmail_message_id: str) -> dict[str, Any] | None:
+        with self.db.read() as conn:
+            return _row(
+                conn.execute(
+                    "SELECT * FROM emails WHERE gmail_message_id = ?", (gmail_message_id,)
+                ).fetchone()
+            )
 
     def forget_ignored_for(self, reason: str) -> int:
         """Forget every left-alone mail that was left alone for this reason, so the next check

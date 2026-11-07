@@ -41,6 +41,7 @@ class InboundEmail:
     references: str | None
     auth_results: tuple[str, ...]  # Authentication-Results headers, top to bottom
     label_ids: tuple[str, ...]
+    bulk_signal: str | None = None  # why this looks like a mass or automatic mailing, if it does
 
     @property
     def sender_domain(self) -> str:
@@ -139,6 +140,20 @@ def extract_text(payload: dict[str, Any]) -> str:
     return strip_html("\n".join(html))
 
 
+def bulk_signal(headers: dict[str, list[str]]) -> str | None:
+    """Headers that mark a mass mailing or an automatic message (newsletters, notifications).
+    People writing to ask for something do not send these."""
+    if "list-unsubscribe" in headers:
+        return "mass mailing (it has an unsubscribe link)"
+    precedence = headers.get("precedence", [""])[0].strip().lower()
+    if precedence in ("bulk", "list", "junk"):
+        return "mass mailing (marked as bulk mail)"
+    automatic = headers.get("auto-submitted", [""])[0].strip().lower()
+    if automatic and automatic != "no":
+        return "automatic message"
+    return None
+
+
 def parse_message(data: dict[str, Any]) -> InboundEmail:
     """Build an :class:`InboundEmail` from a ``users.messages.get(format="full")`` result."""
     try:
@@ -167,4 +182,5 @@ def parse_message(data: dict[str, Any]) -> InboundEmail:
         references=" ".join(headers.get("references", [])).strip() or None,
         auth_results=tuple(headers.get("authentication-results", [])),
         label_ids=tuple(data.get("labelIds", [])),
+        bulk_signal=bulk_signal(headers),
     )

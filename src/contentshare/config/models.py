@@ -6,7 +6,7 @@ import ntpath
 import os
 import re
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -341,7 +341,8 @@ class GmailSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     client_secret_path: str | None = None  # the OAuth client file you download from Google Cloud
-    lookback_days: Annotated[int, Field(ge=1, le=365)] = 30
+    # The very first check reads this many days back; later checks read only what is new.
+    first_scan_days: Annotated[int, Field(ge=1, le=365)] = 5
     max_messages: Annotated[int, Field(ge=1, le=500)] = 100  # per check
     # Applying a label needs the broader gmail.modify permission. Turn this off to stay on
     # read + send only; the app's own database still prevents processing an email twice.
@@ -351,6 +352,15 @@ class GmailSettings(BaseModel):
     # DMARC (or SPF and DKIM). Only results added by these servers are believed.
     require_authentication: bool = True
     trusted_authserv_ids: list[str] = Field(default_factory=lambda: ["mx.google.com"])
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_names(cls, data: Any) -> Any:
+        """Older settings files call the first-check window ``lookback_days`` (a fixed window
+        every time). It is dropped: checks now continue from the last one."""
+        if isinstance(data, dict) and "lookback_days" in data:
+            data = {k: v for k, v in data.items() if k != "lookback_days"}
+        return data
 
     @field_validator("processed_label")
     @classmethod

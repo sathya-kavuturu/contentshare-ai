@@ -212,7 +212,7 @@ class HistoryPage(QWidget):
         self.detail.setPlainText("\n".join(parts))
 
     def show_skipped(self) -> None:
-        SkippedMailDialog(self.ctx.controller, self).exec()
+        SkippedMailDialog(self.ctx.controller, self, bridge=self.ctx.bridge).exec()
 
     def restore(self) -> None:
         request_id = self._selected_id()

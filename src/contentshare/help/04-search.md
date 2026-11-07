@@ -14,11 +14,15 @@ matches **all** of these:
 
 * it is **from** one of the sender addresses or sender domains of your departments
   (*Settings → Departments*),
-* it arrived within the last **Look back** days (30 by default),
+* it arrived since the last check (the very first check reads back **First check reads back** days, 5 by default),
 * it does **not** already carry the **ContentShareAI/Processed** label (when labels are on),
 
-and reads at most **Emails per check** of them (100 by default). Every other email in the
-mailbox is never opened, and a sender that is not in a department is never asked for.
+and reads at most **Emails per check** of them (100 by default). With *Smart reading* on, mail
+from people in no department is read too, in every Gmail folder (Promotions and Spam
+included): automatic mailings are skipped at once, and the local model reads the subject and
+text of the rest and says whether it asks for content. What is not a request is kept in the
+**Mailbox** with the reason, and can be moved to the requests from there. A mail already seen is
+never read again.
 
 (With **Smart reading** switched on, recent mail in your main inbox from other senders is also
 read, so that requests from people who are in no department can be found. See

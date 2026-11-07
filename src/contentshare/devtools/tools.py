@@ -81,7 +81,15 @@ def explain_email(controller: Controller, sender: str, subject: str, body: str) 
         f"4. Counts as found in the index (a candidate of {FOUND_SCORE:.0f}% or more): "
         f"{'YES' if any_found else 'NO'}"
     )
-    if any_found:
+    if any_found and found:
+        out.append(
+            "   -> lines are exactly folder names: a request is created without asking the model."
+        )
+    elif any_found and config.smart.enabled:
+        out.append(
+            "   -> the local model is asked first whether it is a request; if not, it is skipped."
+        )
+    elif any_found:
         out.append("   -> a request is created for review without asking the model.")
     elif config.smart.enabled and config.smart.read_unlisted and dept is None:
         out.append("   -> the local model would be asked next (use 'Try the model' below).")

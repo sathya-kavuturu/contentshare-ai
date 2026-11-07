@@ -557,7 +557,7 @@ class SettingsPage(QWidget):
         self.max_messages.setMaximumWidth(160)
         form.addRow("", self.label)
         form.addRow("", self.require_auth)
-        form.addRow("Look back", self.lookback)
+        form.addRow("First check reads back", self.lookback)
         form.addRow("Emails per check", self.max_messages)
         note = QLabel(
             "Changing the label option changes the permissions Gmail is asked for: "
@@ -673,7 +673,7 @@ class SettingsPage(QWidget):
         self.secret.setText(c.gmail.client_secret_path or "")
         self.label.setChecked(c.gmail.apply_label)
         self.require_auth.setChecked(c.gmail.require_authentication)
-        self.lookback.setValue(c.gmail.lookback_days)
+        self.lookback.setValue(c.gmail.first_scan_days)
         self.max_messages.setValue(c.gmail.max_messages)
         self.ready_score.setValue(c.matching.auto_ready_score)
         self.gap.setValue(c.matching.ambiguity_gap)
@@ -717,7 +717,7 @@ class SettingsPage(QWidget):
             client_secret_path=self.secret.text().strip() or None,
             apply_label=self.label.isChecked(),
             require_authentication=self.require_auth.isChecked(),
-            lookback_days=self.lookback.value(),
+            first_scan_days=self.lookback.value(),
             max_messages=self.max_messages.value(),
         )
         base["matching"].update(

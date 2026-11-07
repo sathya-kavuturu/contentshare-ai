@@ -68,10 +68,10 @@ def test_a_check_leaves_the_search_the_ids_and_the_decision(world: MailWorld) ->
     last = TRACE.last_check()
     assert last is not None
     text = last.text()
-    assert "Gmail search: in:inbox newer_than" in text  # the exact query
+    assert "Gmail search: -in:trash -in:sent" in text  # the exact query
     assert "u1" in text and "u2" in text  # the ids Gmail returned
     assert "Department of the sender: none" in text
-    assert "something on the server matches" in text  # the first mail
+    assert "Lines that are exactly folder names: 1 found" in text  # the first mail
     assert "nothing matches" in text  # the second
     assert "request #" in text and "left alone: sender is not in any department" in text
     assert "Result: 2 read, 1 request(s)" in text

@@ -96,7 +96,7 @@ senders are ever read. Use **Add…**, **Edit…** (or double-click) and **Remov
 | **Connect Gmail… / Disconnect** | Signs in through Google's page, or revokes access and forgets the sign-in. |
 | **Label processed emails** | Adds the label **ContentShareAI/Processed** to handled mail. It needs the `gmail.modify` permission. If you change it, disconnect and connect again. |
 | **Treat a sender as verified only if Gmail confirms it** | Recommended. Only mail that passed Gmail's sender checks is treated as genuine; the rest needs an extra tick before copying. |
-| **Look back** | How many days of mail a check looks through. |
+| **First check reads back** | How many days of mail the very first check reads. Later checks read only mail that arrived since the last one. |
 | **Emails per check** | The most emails read in one check. |
 
 ## Smart reading

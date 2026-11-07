@@ -182,6 +182,20 @@ MIGRATIONS: list[str] = [
         created_at   TEXT NOT NULL
     );
     """,
+    # --- v8: every mail that was looked at keeps its Gmail labels and a short text (for the
+    #         Mailbox view); where the last check got to; senders always skipped or accepted ---
+    """
+    ALTER TABLE emails ADD COLUMN labels TEXT NOT NULL DEFAULT '';
+    CREATE TABLE scan_state (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    CREATE TABLE sender_rules (
+        sender     TEXT PRIMARY KEY,
+        action     TEXT NOT NULL CHECK (action IN ('skip', 'request')),
+        created_at TEXT NOT NULL
+    );
+    """,
 ]
 
 

@@ -136,6 +136,7 @@ class FakeGmail:
         self.calls: list[str] = []
         self.failures: dict[str, list[Exception]] = {}
         self.queries: list[str] = []
+        self.spam_flags: list[bool] = []
         self.loose_from_match = False  # mimic Gmail matching "dept.org" inside "notdept.org"
         self.drop_response_on_send = False  # message is stored, but the caller sees a timeout
         self.hide_thread = False  # make thread lookups fail with a network error
@@ -178,11 +179,22 @@ class _Messages:
         self.g = gmail
 
     def list(
-        self, userId: str, q: str = "", maxResults: int = 100, pageToken: str | None = None
+        self,
+        userId: str,
+        q: str = "",
+        maxResults: int = 100,
+        pageToken: str | None = None,
+        includeSpamTrash: bool = False,
     ) -> _Request:
         def run() -> dict[str, Any]:
             self.g.queries.append(q)
-            matches = [m for m in self.g.messages.values() if self._matches(m, q)]
+            self.g.spam_flags.append(includeSpamTrash)
+            matches = [
+                m
+                for m in self.g.messages.values()
+                if self._matches(m, q)
+                and (includeSpamTrash or not {"SPAM", "TRASH"} & set(m["labelIds"]))
+            ]
             matches.sort(key=lambda m: -int(m["internalDate"]))
             start = int(pageToken or 0)
             size = min(maxResults, self.g.page_size)

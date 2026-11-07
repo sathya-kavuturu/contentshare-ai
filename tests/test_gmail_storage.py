@@ -15,15 +15,15 @@ def test_gmail_settings_defaults_are_the_safe_ones() -> None:
     g = AppConfig().gmail
     assert g.require_authentication is True
     assert g.trusted_authserv_ids == ["mx.google.com"]
-    assert (g.lookback_days, g.max_messages, g.apply_label) == (30, 100, True)
+    assert (g.first_scan_days, g.max_messages, g.apply_label) == (5, 100, True)
     assert g.client_secret_path is None
 
 
 @pytest.mark.parametrize(
     "bad",
     [
-        {"lookback_days": 0},
-        {"lookback_days": 1000},
+        {"first_scan_days": 0},
+        {"first_scan_days": 1000},
         {"max_messages": 0},
         {"max_messages": 5000},
         {"processed_label": ""},

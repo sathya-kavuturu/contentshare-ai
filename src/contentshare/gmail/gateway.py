@@ -112,13 +112,17 @@ class GmailGateway:
         data = self._execute(self._svc.users().getProfile(userId=self._user), what="profile")
         return str(data["emailAddress"])
 
-    def list_message_ids(self, query: str, limit: int) -> list[str]:
-        """Message ids matching ``query``, newest first, up to ``limit``."""
+    def list_message_ids(
+        self, query: str, limit: int, *, include_spam_trash: bool = False
+    ) -> list[str]:
+        """Message ids matching ``query``, newest first, up to ``limit``. Gmail leaves Spam and
+        Trash out of every search unless asked."""
         ids: list[str] = []
         token: str | None = None
         while len(ids) < limit:
             request = self._svc.users().messages().list(
-                userId=self._user, q=query, maxResults=min(_PAGE, limit - len(ids)), pageToken=token
+                userId=self._user, q=query, maxResults=min(_PAGE, limit - len(ids)),
+                pageToken=token, includeSpamTrash=include_spam_trash,
             )  # fmt: skip
             page = self._execute(
                 request,

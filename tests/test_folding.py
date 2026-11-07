@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from contentshare.config.store import load_config
-from contentshare.ui.main_window import SIDEBAR_NARROW, SIDEBAR_WIDE
+from contentshare.ui.main_window import PAGES, SIDEBAR_NARROW, SIDEBAR_WIDE
 from contentshare.ui.nav import NavDelegate
 from test_ui import Rig, rig  # noqa: F401  (the window fixture)
 
@@ -61,7 +61,7 @@ def test_a_folded_menu_still_switches_screens_and_names_them_in_tooltips(
     assert (
         window.nav.item(0).toolTip() == "Requests (1)"
     )  # the name and count, since only the icon shows
-    window.nav.setCurrentRow(3)
+    window.nav.setCurrentRow(PAGES.index("Settings"))
     assert window.stack.currentWidget() is window.settings
     window.set_sidebar_collapsed(False)
     assert window.nav.item(0).toolTip() == ""  # the names are on screen again
@@ -112,7 +112,7 @@ def test_changing_a_window_option_does_not_throw_away_unsaved_settings(rig: Rig)
     page.default_reply.setPlainText("typed but not saved")
     window.set_sidebar_collapsed(True)  # saves a window option, which replaces the config object
     window.nav.setCurrentRow(0)
-    window.nav.setCurrentRow(3)
+    window.nav.setCurrentRow(PAGES.index("Settings"))
     assert page.default_reply.toPlainText() == "typed but not saved"
 
 
@@ -289,7 +289,10 @@ def test_the_skipped_mail_box_lists_mail_and_reads_it_again(rig: Rig, qtbot: Any
     )
     box = SkippedMailDialog(rig.controller)
     qtbot.addWidget(box)
-    assert box.table.rowCount() == 1 and box.table.item(0, 3).text().startswith("not recognised")
-    box.table.selectRow(0)
-    box.read_again()
-    assert box.table.rowCount() == 0 and not repo.is_processed("m1")
+    table = box.view.table
+    reason = table.item(0, 5)
+    assert table.rowCount() == 1 and reason is not None and reason.text().startswith("not recog")
+    assert not box.view.move_button.isEnabled()  # nothing is selected yet
+    table.selectRow(0)
+    assert box.view.move_button.isEnabled() and box.view.again.isEnabled()
+    assert "Subject: Hello" in box.view.preview.toPlainText()

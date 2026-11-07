@@ -43,7 +43,7 @@ from contentshare.devtools.trace import TRACE
 from contentshare.gmail.auth import GmailAuth, required_scopes
 from contentshare.gmail.errors import AuthRequiredError, GmailError
 from contentshare.gmail.gateway import GmailGateway
-from contentshare.gmail.intake import IntakeReport, IntakeService
+from contentshare.gmail.intake import SCAN_MARKER, IntakeReport, IntakeService
 from contentshare.gmail.message import parse_message
 from contentshare.gmail.replies import ReplyDraft, ReplyError, ReplyResult, ReplyService
 from contentshare.index.pcsearch import DEFAULT_SECONDS, search_pc
@@ -416,6 +416,7 @@ class Controller:
         for row in self.repo.ignored_emails(limit=100000):
             count += int(self.repo.forget_ignored_email(int(row["id"])))
         if count:
+            self.repo.set_scan_value(SCAN_MARKER, None)  # the next check reads the first days again
             self._fake_gateway = None  # the test mailbox starts again too
             self._emit("changed")
         return count
@@ -861,12 +862,69 @@ class Controller:
         """Mail the program looked at and left alone, with why (for the History)."""
         return self.repo.ignored_emails()
 
+    def mailbox(self) -> list[dict[str, Any]]:
+        """Every mail looked at (requests and skipped), newest first, for the Mailbox view."""
+        return self.repo.mailbox()
+
+    def _mail_service(self) -> IntakeService:
+        """An intake service for one mail the person picked. Not while a check is running."""
+        if self._check_lock.locked():
+            raise ActionError("A check is running; try again when it has finished")
+        try:
+            gateway = self._gateway()
+        except AuthRequiredError as exc:
+            raise ActionError("Connect Gmail first (Settings → Gmail)") from exc
+        return IntakeService(
+            gateway, self.repo, self.index, self.config, today=self._today, reader=self._reader()
+        )
+
+    def move_to_requests(self, email_ids: list[int]) -> list[int]:
+        """The person says these skipped mails are requests. Each becomes a request (the sender
+        is not asked, the model is not asked); with no names found it is one empty line that
+        folders are added to. Returns the new request numbers."""
+        service = self._mail_service()
+        made: list[int] = []
+        try:
+            for email_id in email_ids:
+                row = self.repo.get_email(email_id)
+                if row is None or row["ignored_reason"] is None:
+                    continue
+                ids = service.move_to_requests(str(row["gmail_message_id"]))
+                if ids and self.config.smart.learn:
+                    self._remember(email_id, True, [])
+                made.extend(ids)
+        except GmailError as exc:
+            raise ActionError(f"Gmail could not be read: {exc}") from exc
+        if made:
+            self._emit("changed", made[0])
+        return made
+
     def read_mail_again(self, email_ids: list[int]) -> int:
-        """Forget that these left-alone mails were seen: the next check reads them again."""
-        count = sum(1 for i in email_ids if self.repo.forget_ignored_email(i))
-        if count:
-            self._emit("changed", None)
+        """Read these skipped mails again now (the model is asked once more). Returns how many
+        became requests."""
+        service = self._mail_service()
+        count = 0
+        try:
+            for email_id in email_ids:
+                row = self.repo.get_email(email_id)
+                if row is None or row["ignored_reason"] is None:
+                    continue
+                count += service.read_again(str(row["gmail_message_id"])).requests
+        except GmailError as exc:
+            raise ActionError(f"Gmail could not be read: {exc}") from exc
+        self._emit("changed", None)
         return count
+
+    def always_skip_sender(self, sender: str, skip: bool = True) -> None:
+        """Mail from this address is skipped without being read (``skip=False``: not any more)."""
+        self.repo.set_sender_rule(sender, "skip" if skip else None)
+
+    def always_accept_sender(self, sender: str, accept: bool = True) -> None:
+        """Mail from this address is always taken as a request, without judging it."""
+        self.repo.set_sender_rule(sender, "request" if accept else None)
+
+    def sender_rule(self, sender: str) -> str | None:
+        return self.repo.sender_rule(sender)
 
     def reject(self, request_id: int, reason: str = "") -> None:
         self._transition(request_id, S.REJECTED, reason=reason.strip()[:200] or "rejected")

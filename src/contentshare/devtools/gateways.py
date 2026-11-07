@@ -100,7 +100,9 @@ class FakeGateway:
     def profile_email(self) -> str:
         return "fake-mailbox@test.invalid"
 
-    def list_message_ids(self, query: str, limit: int) -> list[str]:
+    def list_message_ids(
+        self, query: str, limit: int, *, include_spam_trash: bool = False
+    ) -> list[str]:
         log.info("fake gmail: search %r", query)
         return [i for i in self._messages if i not in self._labelled][:limit]
 

@@ -33,7 +33,7 @@ def test_queries_only_ask_for_configured_senders(w: MailWorld) -> None:
     assert query.startswith("from:(")
     for sender in ("anita@dept.org", "editor@dept.org", "finance.org"):
         assert sender in query
-    assert "newer_than:30d" in query
+    assert "newer_than:5d" in query and "-in:trash" in query
     assert "-label:contentshareai-processed" in query
 
 

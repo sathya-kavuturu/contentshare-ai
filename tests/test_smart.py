@@ -551,13 +551,41 @@ def test_a_department_that_uses_the_model_gets_names_from_it_and_the_answer_is_l
     assert "answered in 3.3 s" in reason  # the time shows in the history
 
 
-def test_a_department_without_the_option_never_asks_the_model(world: MailWorld) -> None:
+def test_a_department_without_the_option_only_asks_the_model_whether_it_is_a_request(
+    world: MailWorld,
+) -> None:
     world.gmail.add(
         make_message(message_id="d3", subject="Hello", body="Kindly share the recordings")
     )
     reader = FakeReader(Reading(True, (EXISTING,)))
     _with_model_departments(world, reader, use=False).check_now()
-    assert reader.calls == 0
+    assert reader.calls == 1  # asked: is it a request?
+    (row,) = world.repo.list_requests()
+    assert "source" not in json.loads(row["query_json"])  # but its names are not used
+
+
+def test_a_department_mail_the_model_is_sure_is_no_request_is_skipped_with_the_reason(
+    world: MailWorld,
+) -> None:
+    world.gmail.add(
+        make_message(message_id="d6", subject="Thanks", body="Kindly note the new schedule")
+    )
+    reader = FakeReader(Reading(False, (), 0.9, "a thank-you note"))
+    report = _with_model_departments(world, reader, use=False).check_now()
+    assert report.requests == 0 and report.ignored == 1
+    (row,) = world.repo.ignored_emails()
+    assert "a thank-you note" in row["ignored_reason"]
+
+
+def test_a_department_mail_the_model_is_unsure_about_is_still_a_request(
+    world: MailWorld,
+) -> None:
+    world.gmail.add(
+        make_message(message_id="d7", subject="Thanks", body="Kindly note the new schedule")
+    )
+    reader = FakeReader(Reading(False, (), 0.3, "maybe not"))
+    report = _with_model_departments(world, reader, use=False).check_now()
+    assert report.requests == 1  # a known sender is only skipped when the model is sure
 
 
 def test_a_department_email_with_exact_names_does_not_need_the_model(world: MailWorld) -> None:
@@ -584,18 +612,37 @@ def test_a_mail_that_is_not_a_request_is_logged_too(world: MailWorld) -> None:
     assert len(logged) == 1 and "not a content request" in logged[0]["detail"]
 
 
-def test_the_search_for_unlisted_mail_leaves_out_automatic_senders(world: MailWorld) -> None:
+def test_the_search_for_unlisted_mail_covers_every_folder(world: MailWorld) -> None:
     config = service(world).config
     query = build_unlisted_query(config)
-    assert "in:inbox" in query and "-from:me" in query and "noreply" in query
-    assert "-category:promotions" in query and "category:primary" not in query
+    assert "-from:me" in query and "-in:trash" in query and "newer_than:5d" in query
+    assert "in:inbox" not in query and "-category:" not in query  # Promotions etc. are read too
     assert "-label:" not in query  # mail labelled by an earlier version must stay visible
+    world.gmail.add(make_message(message_id="n2", from_=STRANGER, body=EXISTING))
+    world.gmail.add(make_message(message_id="n3", from_=STRANGER, body=EXISTING, labels=("SPAM",)))
+    ids, _more = service(world)._new_ids()
+    assert sorted(ids) == ["n2", "n3"] and all(world.gmail.spam_flags)  # Spam is asked for
+
+
+def test_automatic_mailings_are_skipped_at_once_with_the_reason(world: MailWorld) -> None:
     world.gmail.add(
         make_message(message_id="n1", from_="Robot <noreply@elsewhere.com>", body=EXISTING)
     )
-    world.gmail.add(make_message(message_id="n2", from_=STRANGER, body=EXISTING))
-    ids = service(world)._new_ids()
-    assert ids == ["n2"]
+    world.gmail.add(
+        make_message(
+            message_id="n4",
+            from_="Shop <deals@shop.example>",
+            subject="Kindly share this offer",
+            body="please share with friends",
+            labels=("CATEGORY_PROMOTIONS",),
+            extra_headers=[("List-Unsubscribe", "<mailto:u@shop.example>")],
+        )
+    )
+    reader = FakeReader(Reading(True, (EXISTING,), 0.9))
+    report = service(world, reader).check_now()
+    assert reader.calls == 0 and report.requests == 0 and report.ignored == 2  # no model needed
+    reasons = {r["gmail_message_id"]: r["ignored_reason"] for r in world.repo.ignored_emails()}
+    assert "no-reply" in reasons["n1"] and "unsubscribe" in reasons["n4"]
 
 
 # --------------------------------------------------------------------------- the person decides
@@ -730,7 +777,7 @@ def test_unlisted_mail_labelled_by_an_earlier_version_is_still_found(world: Mail
     world.gmail.add(
         make_message(message_id="old1", from_=STRANGER, body=EXISTING, labels=("INBOX", "Label_1"))
     )
-    assert service(world)._new_ids() == ["old1"]
+    assert service(world)._new_ids()[0] == ["old1"]
 
 
 def test_with_no_department_content_and_destination_can_be_anywhere(

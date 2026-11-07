@@ -11,6 +11,7 @@ from contentshare.app import controller as controller_module
 from contentshare.app.controller import ActionError
 from contentshare.smart.runtime import SmartError
 from contentshare.smart.schema import Reading
+from contentshare.ui.main_window import PAGES
 from test_controller import Harness, h  # noqa: F401  (the controller fixture)
 from test_ui import Rig, rig  # noqa: F401  (the window fixture)
 
@@ -179,7 +180,8 @@ def test_leaving_settings_with_changes_asks_and_stay_keeps_you_there(
     page.dry_run.setChecked(not page.dry_run.isChecked())
     _go(rig, "History")
     assert asked == [1]
-    assert rig.window.stack.currentWidget() is page and rig.window.nav.currentRow() == 3
+    assert rig.window.stack.currentWidget() is page
+    assert rig.window.nav.currentRow() == PAGES.index("Settings")
     assert page.has_unsaved()  # the edit is still there
 
 

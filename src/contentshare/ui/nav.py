@@ -26,6 +26,7 @@ _GLYPHS = {  # Segoe Fluent Icons / Segoe MDL2 Assets code points
     "Requests": "",
     "Active copies": "",
     "History": "",
+    "Mailbox": "",  # the envelope
     "Settings": "",
     "Help": "",
     "Developer": "",  # the code brackets
