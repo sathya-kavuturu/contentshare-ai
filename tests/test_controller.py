@@ -707,3 +707,27 @@ def test_auto_copy_does_nothing_in_dry_run(h: Harness) -> None:
     )
     assert h.ctl.auto_copy_certain() == []
     assert h.ctl.view(v.id).state == "READY"
+
+
+# --------------------------------------------------------------------------- daily index refresh
+def test_daily_index_refresh_is_due_only_after_its_time_and_when_not_read_since(h: Harness) -> None:
+    from datetime import datetime, timedelta
+
+    from contentshare.config.models import IndexSettings
+
+    now = datetime.now().astimezone()
+    h.ctl.index.scan_all(h.ctl.config.all_roots())  # read just now
+    h.ctl.config = h.ctl.config.model_copy(
+        update={"index": IndexSettings(refresh_daily=False, refresh_time="00:00")}
+    )
+    assert not h.ctl.index_refresh_due(now)  # the setting is off
+    on = IndexSettings(
+        refresh_daily=True, refresh_time=(now - timedelta(minutes=1)).strftime("%H:%M")
+    )
+    h.ctl.config = h.ctl.config.model_copy(update={"index": on})
+    if now.hour or now.minute > 1:  # the time is earlier today
+        assert not h.ctl.index_refresh_due(now)  # read after that time already
+    assert h.ctl.index_refresh_due(now + timedelta(days=1))  # tomorrow's time has passed
+    later = IndexSettings(refresh_daily=True, refresh_time="23:59")
+    h.ctl.config = h.ctl.config.model_copy(update={"index": later})
+    assert not h.ctl.index_refresh_due(now.replace(hour=0, minute=5))  # not yet time

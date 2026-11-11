@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from PySide6.QtCore import QObject, QTimer, Signal
 
@@ -33,6 +33,8 @@ class Automation(QObject):
         super().__init__(parent)
         self.controller, self.bridge = controller, bridge
         self.scheduler = scheduler or DailyScheduler()
+        self._index_busy = False
+        self._index_tried: date | None = None
         self._timer = QTimer(self)
         self._timer.setInterval(POLL_MS)
         self._timer.timeout.connect(self.poll)
@@ -55,6 +57,7 @@ class Automation(QObject):
 
     def config_changed(self) -> None:
         c = self.controller.config
+        self._index_tried = None  # a new refresh time may be due today
         self.scheduler.reconfigure(
             c.schedule.daily_check_time,
             enabled=self._can_run(),
@@ -77,7 +80,33 @@ class Automation(QObject):
     def next_run(self) -> datetime | None:
         return self.scheduler.next_run
 
+    def _refresh_index_if_due(self) -> None:
+        """The daily index refresh (Settings → Index). A failed or skipped try is not repeated
+        until the next day, so a broken server is not hammered every 15 seconds."""
+        today = datetime.now().date()
+        if self._index_busy or self._index_tried == today:
+            return
+        try:
+            due = self.controller.index_refresh_due()
+        except Exception:
+            log.warning("index refresh check failed", exc_info=True)
+            return
+        if not due:
+            return
+        self._index_busy = True
+        self._index_tried = today
+
+        def done(_reports: object) -> None:
+            self._index_busy = False
+
+        def failed(exc: Exception) -> None:
+            self._index_busy = False
+            log.warning("scheduled index refresh failed: %s", type(exc).__name__)
+
+        self.bridge.work(self.controller.scheduled_index_refresh, done, failed)
+
     def poll(self) -> None:
+        self._refresh_index_if_due()
         due = self.scheduler.poll()
         if due is None:
             return

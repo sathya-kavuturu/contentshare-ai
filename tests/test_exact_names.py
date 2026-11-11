@@ -557,3 +557,16 @@ def test_a_folder_can_still_be_added_after_the_copy_and_gets_its_own_reply(
     h.ctl.choose(new_id, hit.item_id)  # type: ignore[arg-type]
     assert h.ctl.view(new_id).state == "READY"
     assert h.ctl.view(ready.id).state == "VERIFIED"  # the finished folder is not touched
+
+
+def test_folder_and_initiation_file_are_two_names() -> None:
+    body = (
+        "Namaskaram\n\nWe request you to kindly share the content for the upcoming program.\n\n"
+        "Program dates: Nov 13-17 2026\nProgram: Step 7\n\n1. English\n"
+        "   Folder name: IE Step 7 English 31-oct-2026\n"
+        "   Initiation file name: santosh English 21st Jun 2026\n\nPranam,\nKunal.\n"
+    )
+    names = _names("Content request", body)
+    assert names["IE Step 7 English 31-oct-2026"] is True
+    assert names["santosh English 21st Jun 2026"] is True
+    assert "English" not in names  # the numbered heading only introduces the two lines

@@ -335,6 +335,15 @@ class IndexSettings(BaseModel):
 
     exclude_names: list[str] = Field(default_factory=lambda: list(DEFAULT_EXCLUDES))
     index_files: bool = True  # False = folders only, for very large servers
+    refresh_daily: bool = False  # read the storage folders again every day at ``refresh_time``
+    refresh_time: str = "03:00"  # local time, 24 hours
+
+    @field_validator("refresh_time")
+    @classmethod
+    def _refresh_time(cls, value: str) -> str:
+        if not _TIME.match(value):
+            raise ValueError("Time must be HH:MM in 24-hour format")
+        return value
 
 
 class GmailSettings(BaseModel):

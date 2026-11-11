@@ -616,6 +616,15 @@ class SettingsPage(QWidget):
         self.scan_button.clicked.connect(self._scan)
         form.addRow("Storage index", self.index_state)
         form.addRow("", self.scan_button)
+        self.refresh_daily = QCheckBox("Refresh Index Daily")
+        self.refresh_time = QTimeEdit()
+        self.refresh_time.setDisplayFormat("HH:mm")
+        self.refresh_time.setAccessibleName("Daily index refresh time")
+        self.refresh_time.setMaximumWidth(140)
+        self.refresh_time_label = QLabel("Refresh at")
+        self.refresh_daily.toggled.connect(self._show_refresh_time)
+        form.addRow("", self.refresh_daily)
+        form.addRow(self.refresh_time_label, self.refresh_time)
         note = QLabel(
             "The index lists folder and file names in the storage folders (the general ones and "
             "each department's own) so requests can be matched quickly. It only reads. A large "
@@ -648,6 +657,10 @@ class SettingsPage(QWidget):
         self.check_time.setTime(QTime(hour, minute))
         self.window_from.setTime(QTime.fromString(c.schedule.window_from, "HH:mm"))
         self.window_to.setTime(QTime.fromString(c.schedule.window_to, "HH:mm"))
+        r_hour, r_minute = (int(p) for p in c.index.refresh_time.split(":"))
+        self.refresh_time.setTime(QTime(r_hour, r_minute))
+        self.refresh_daily.setChecked(c.index.refresh_daily)
+        self._show_refresh_time()
         self.every.setCurrentIndex(max(0, self.every.findData(c.schedule.check_every_minutes)))
         self._show_interval()
         self.appearance.setCurrentIndex(self.appearance.findData(c.appearance))
@@ -698,6 +711,10 @@ class SettingsPage(QWidget):
             close_to_tray=self.to_tray.isChecked(),
             notifications=self.notify.isChecked(),
             start_with_windows=self.start_login.isChecked(),
+        )
+        base["index"].update(
+            refresh_daily=self.refresh_daily.isChecked(),
+            refresh_time=self.refresh_time.time().toString("HH:mm"),
         )
         base["telegram"] = self.telegram_box.values()
         base["smart"] = self.smart_box.values()
@@ -807,6 +824,11 @@ class SettingsPage(QWidget):
             return
         if keep_edits:
             self._loaded = controller.config
+
+    def _show_refresh_time(self) -> None:
+        on = self.refresh_daily.isChecked()
+        self.refresh_time.setEnabled(on)
+        self.refresh_time_label.setEnabled(on)
 
     def _show_interval(self) -> None:
         """The time of day matters only for the once-a-day schedule."""

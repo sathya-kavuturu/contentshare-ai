@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from contentshare.app.controller import Event
 from contentshare.copy_engine import format_bytes
 from contentshare.gmail.intake import IntakeReport
+from contentshare.index.store import ScanReport
 from contentshare.ui.context import UiContext
 from contentshare.ui.request_card import OPEN_STATES, CardState, RequestCard
 from contentshare.ui.widgets import Combo, StackBody, page_header
@@ -91,6 +92,10 @@ class RequestsPage(QWidget):
         self.last_check.setProperty("role", "muted")
         head.addWidget(self.last_check)
         head.addSpacing(8)
+        self.refresh_button = QPushButton("Refresh index")
+        self.refresh_button.setToolTip("Read the storage folders again so new folders are found")
+        self.refresh_button.clicked.connect(self.refresh_index)
+        head.addWidget(self.refresh_button)
         self.check_button = QPushButton("Check now")
         self.check_button.setProperty("primary", True)
         self.check_button.clicked.connect(self.check_now)
@@ -224,6 +229,39 @@ class RequestsPage(QWidget):
             card.select.setChecked(on)
 
     # ------------------------------------------------------------------ actions
+    def refresh_index(self) -> None:
+        if not self.ctx.controller.config.all_roots():
+            QMessageBox.information(
+                self, "Index", "Add a storage folder in Settings → General and save first."
+            )
+            return
+        self.refresh_button.setEnabled(False)
+        self.refresh_button.setText("Refreshing…")
+        self.ctx.say("Refreshing the index… this can take a few minutes on a large server.")
+
+        def finish() -> None:
+            self.refresh_button.setEnabled(True)
+            self.refresh_button.setText("Refresh index")
+
+        def done(reports: list[ScanReport]) -> None:
+            finish()
+            bad = [r for r in reports if r.status != "complete"]
+            if bad:
+                QMessageBox.warning(
+                    self, "Index",
+                    "\n".join(f"{r.root}: {r.error or r.status}" for r in bad)
+                    + "\n\nThe previous index was kept.",
+                )  # fmt: skip
+            else:
+                self.ctx.say("Index refreshed.")
+            self.refresh()
+
+        def failed(exc: Exception) -> None:
+            finish()
+            self.ctx.fail(self, "Index", exc)
+
+        self.ctx.bridge.work(self.ctx.controller.rescan_index, done, failed)
+
     def check_now(self) -> None:
         self.check_button.setEnabled(False)
         self.check_button.setText("Checking…")

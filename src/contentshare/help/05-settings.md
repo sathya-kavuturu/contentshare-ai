@@ -137,7 +137,12 @@ match is worse than a request that waits for you.
 
 The index lists folder and file names on the storage server so requests can be matched quickly.
 **Refresh index now** reads the server again (this can take a few minutes on a large server). It
-only reads. ContentShare also refreshes it about once a day, and keeps the previous index if a
-scan fails.
+only reads. The same **Refresh index** button is at the top of the Requests tab. It keeps the
+previous index if a scan fails.
+
+| Setting | What it does |
+|---|---|
+| **Refresh Index Daily** | Tick it to read the server again every day. Untick it to refresh only by hand. |
+| **Refresh at** | The time of day (24 hours, for example 03:00) the daily refresh runs. Pick a quiet hour. If the app was closed at that time, it refreshes when it is next running. |
 
 [Back to Getting started](help:start)

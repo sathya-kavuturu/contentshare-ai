@@ -28,6 +28,11 @@ _QUOTED = re.compile(rf"[{_OPEN_QUOTES}]([^{_CLOSE_QUOTES}\n]{{3,200}})[{_CLOSE_
 _SPLIT = re.compile(r"[,;|]")
 _WORD = re.compile(rf"[^\s,;|()\[\]{{}}<>{_OPEN_QUOTES}{chr(0x201D)}]+")
 _NAME_LIKE = re.compile(r"^[\w.\-]{5,200}$")
+# "Folder name: X", "Initiation file name: X", "File: X": a label that says what the name is
+_LABELLED = re.compile(
+    r"^\s*(?:[A-Za-z][A-Za-z ]{0,40}\s)?(?:folders?|files?)\b[A-Za-z ]{0,20}:\s*(?P<name>\S.*)$",
+    re.IGNORECASE,
+)
 _DAY = r"\d{1,2}(?:st|nd|rd|th)?"
 _RANGE = rf"\s*[-{_DASHES}]\s*"
 # "Nov 22-28 ", "Nov 22 - Nov 28, 2026: ", "22-28 Nov 2026 - " at the start of a line: the week or
@@ -89,9 +94,15 @@ def wanted_names(subject: str, body: str) -> list[WantedName]:
 
     lines = [clean_subject(strip_links(subject))] if subject.strip() else []
     lines += clean_body(body).split("\n") if body.strip() else []
-    for line in lines:
+    for number, line in enumerate(lines):
         bullet = _BULLET.match(line)
         text = bullet[1] if bullet else line
+        if labelled := _LABELLED.match(text):
+            # "Folder name: X" and "Initiation file name: Y" are two separate things asked for
+            add(labelled["name"], True)
+        heading = bullet and number + 1 < len(lines) and _LABELLED.match(lines[number + 1])
+        if heading:
+            continue  # "1. English" above its labelled lines only introduces them
         for quoted in _QUOTED.findall(text):
             add(quoted, True)
         add(text, bool(bullet))  # the whole line, for names that contain spaces

@@ -1372,6 +1372,43 @@ class Controller:
         self._emit("changed")
         return reports
 
+    def index_refresh_due(self, now: datetime | None = None) -> bool:
+        """The daily index refresh is on, today's refresh time has passed, and no storage folder
+        has been read since that time."""
+        settings = self.config.index
+        if not settings.refresh_daily or not self.config.all_roots():
+            return False
+        now = (now or datetime.now()).astimezone()
+        hour, minute = (int(p) for p in settings.refresh_time.split(":"))
+        planned = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+        if now < planned:
+            return False
+        for root in self.config.all_roots():
+            scan = self.index.last_scan(root)
+            stamp = scan.get("finished_at") if scan else None
+            try:
+                finished = datetime.fromisoformat(stamp) if stamp else None
+            except ValueError:
+                finished = None
+            if finished is None:
+                return True
+            if finished.tzinfo is None:
+                finished = finished.replace(tzinfo=UTC)
+            if finished < planned:
+                return True
+        return False
+
+    def scheduled_index_refresh(
+        self, should_stop: Callable[[], bool] | None = None
+    ) -> list[ScanReport] | None:
+        """The daily refresh. Not started while mail is being checked (``None`` then)."""
+        if not self._check_lock.acquire(blocking=False):
+            return None
+        try:
+            return self.rescan_index(should_stop=should_stop)
+        finally:
+            self._check_lock.release()
+
     def index_summary(self) -> dict[str, Any]:
         stats = self.index.stats()
         scans = [self.index.last_scan(r) for r in self.config.all_roots()]
