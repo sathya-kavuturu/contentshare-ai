@@ -6,6 +6,14 @@ uses [semantic versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Added
+- **Backup requests.** When a department's email says it kept content on its own server and asks
+  for a backup, the copy goes the other way: from the department's folder (Settings →
+  Departments → *Backup from*) into the archive (*Back up into*, or the general *Archive folder*
+  in Settings → Backup). Senders in no department use the general archive and the allowed
+  folders. A backup always waits for approval; the department's folder is never changed. If the
+  folder is already in the archive, the card asks each time: keep both (dated name), copy only
+  new or changed files, or skip. *This is a backup* / *Not a backup* on the card reads an email
+  the other way. Backups have their own reply text.
 - **Refresh and Ask the model on each request.** Two buttons at the top of a request look again
   at once: ↻ (Refresh) reads the storage folders again and looks up the folders that still wait;
   Ask the model reads the email again with the local model and adds the folders it names.

@@ -152,7 +152,10 @@ class ReplyService:
         )
 
     def _shared_draft(self, rows: list[dict[str, Any]]) -> ReplyDraft:
-        template = self._department_template(rows[0]["department"])
+        if rows[0].get("kind") == "backup":  # backups have their own wording
+            template = self.config.backup_context(rows[0]["department"]).reply_template
+        else:
+            template = self._department_template(rows[0]["department"])
         body = render_template(template, self._group_values(rows), REPLY_PLACEHOLDERS)
         draft = self._draft(rows[0], SHARED, body)
         return replace(draft, also=tuple(int(r["id"]) for r in rows[1:]))

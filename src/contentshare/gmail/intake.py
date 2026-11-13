@@ -29,6 +29,7 @@ from contentshare.gmail.sender_auth import verify_sender
 from contentshare.index import ContentIndex
 from contentshare.jobs.states import RequestState
 from contentshare.matching import process_email_requests, process_named_requests
+from contentshare.matching.backup import asks_for_backup, backup_possible, process_backup_requests
 from contentshare.matching.service import exact_items, search_found
 from contentshare.parsing.request import parse_request
 from contentshare.parsing.text import clean_body
@@ -315,7 +316,7 @@ class IntakeService:
         room = self.config.gmail.max_messages
         return fresh[:room], len(fresh) > room
 
-    def _handle(self, message_id: str, report: IntakeReport) -> None:
+    def _handle(self, message_id: str, report: IntakeReport) -> None:  # noqa: PLR0911
         raw = self.gateway.get_message(message_id)
         report.examined += 1
         msg = parse_message(raw)
@@ -333,6 +334,8 @@ class IntakeService:
             return self._unlisted_sender(msg, report, accepted=rule == "request")
         if self._is_followup_without_request(msg):
             return self._ignore(msg, "reply in a handled conversation with no new request", report)
+        if asks_for_backup(msg.subject, msg.body) and backup_possible(self.config, dept):
+            return self._handle_backup(msg, dept, report)
 
         reading = self._department_reading(msg, dept, report)
         if reading is not None and not reading.is_request and reading.confidence >= JUDGE_SURE:
@@ -446,6 +449,8 @@ class IntakeService:
         automatic = None if trusted else plainly_automatic(msg)
         if automatic:
             return self._ignore(msg, f"{NOT_A_REQUEST}: {automatic}", report)
+        if asks_for_backup(msg.subject, msg.body) and backup_possible(self.config, None):
+            return self._handle_backup(msg, None, report)
         # 1. lines that are exactly folder names on the server
         exact, _notes = exact_items(msg.subject, msg.body, self.index, None, found_only=True)
         TRACE.step(
@@ -559,7 +564,23 @@ class IntakeService:
             self._warn_once(report, f"The smart reader could not read some mail: {exc}")
             return None
 
-    def _record_unlisted(self, msg: InboundEmail) -> int | None:
+    def _handle_backup(
+        self, msg: InboundEmail, dept: Department | None, report: IntakeReport
+    ) -> None:
+        """The email asks to back content up: the department's own folder is read and the copy
+        goes into the archive. Every folder it names becomes a request of kind "backup"."""
+        email_id = self._record_unlisted(msg, department=dept.name if dept else None)
+        if email_id is None:
+            return None
+        TRACE.step(msg.message_id, "The email asks for a backup: reading the department's folder")
+        ids = process_backup_requests(
+            self.repo, self.config, email_id, msg.subject, msg.body, today=self._today()
+        )
+        self._count(ids, report, msg.message_id)
+        self._label(msg.message_id, report)
+        return None
+
+    def _record_unlisted(self, msg: InboundEmail, department: str | None = None) -> int | None:
         settings = self.config.gmail
         auth = verify_sender(
             msg.auth_results,
@@ -572,7 +593,7 @@ class IntakeService:
             gmail_thread_id=msg.thread_id,
             sender_email=msg.sender_email,
             sender_name=msg.sender_name,
-            department=None,
+            department=department,
             subject=msg.subject,
             snippet=clean_body(msg.body)[:2000],
             received_at=msg.received_at,

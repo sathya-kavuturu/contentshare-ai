@@ -58,8 +58,24 @@ from contentshare.jobs.copy_job import (
 )
 from contentshare.jobs.queue import CopyQueue
 from contentshare.jobs.states import TERMINAL, InvalidTransitionError, RequestState
+from contentshare.matching.backup import (
+    BACKUP,
+    SHARE,
+    backup_possible,
+    find_containing,
+    plan_backup,
+    process_backup_requests,
+    resolve_backup_destination,
+    resolve_backup_source,
+    suffixed,
+)
 from contentshare.matching.scorer import Candidate, rank_candidates
-from contentshare.matching.service import destination_for, process_named_requests, recheck_email
+from contentshare.matching.service import (
+    destination_for,
+    process_email_requests,
+    process_named_requests,
+    recheck_email,
+)
 from contentshare.parsing.dates import date_phrases
 from contentshare.parsing.request import RequestItem, parse_request
 from contentshare.security.paths import PathSafetyError, resolve_within
@@ -159,6 +175,13 @@ class RequestView:
     copy_seconds: float | None = None  # how long the last copy of it took, if one finished
     smart: bool = False  # the names were read from the email by the language model
     approved_by: str = ""  # the Windows user who approved it ("" until someone does)
+    kind: str = "share"  # "backup": a department's own content goes into the archive
+    archive_exists: bool = False  # a backup whose folder is already in the archive: choose first
+    replace_changed: bool = False  # that choice was "copy only new or changed files"
+
+    @property
+    def is_backup(self) -> bool:
+        return self.kind == "backup"
 
     @property
     def copy_time_text(self) -> str:
@@ -292,6 +315,9 @@ def make_view(row: dict[str, Any]) -> RequestView:
         copy_seconds=_seconds(row.get("copy_seconds")),
         approved_by=str(row.get("approved_by") or ""),
         smart=detail.get("source") == "smart",
+        kind=str(row.get("kind") or "share"),
+        archive_exists=bool((detail.get("backup") or {}).get("exists")),
+        replace_changed=bool((detail.get("backup") or {}).get("overwrite")),
     )
 
 
@@ -525,9 +551,11 @@ class Controller:
             raise ActionError("This sender's department is not in the settings; add it first")
         number = max((r["line_no"] for r in self.repo.requests_of_email(email_id)), default=0) + 1
         item = RequestItem(program=name, raw=name)
+        backup = any(r.get("kind") == BACKUP for r in self.repo.requests_of_email(email_id))
         request_id = self.repo.add_request(
-            email_id, number, {"item": item.to_dict()}, auto_reply=self.config.auto_reply_default
-        )
+            email_id, number, {"item": item.to_dict()}, auto_reply=self.config.auto_reply_default,
+            kind=BACKUP if backup else SHARE,
+        )  # fmt: skip
         detail = {
             "item": item.to_dict(),
             "reason": "Added by you: choose the folder to copy",
@@ -624,6 +652,8 @@ class Controller:
         if not text:
             return []
         row = self._row(request_id)  # the request must still exist
+        if row.get("kind") == BACKUP:
+            return self._search_backup(row, text)
         item = self._typed_item(text)
         roots = self.config.roots_for(self._department_or_none(row["department"]))
         hits = self.index.search(text, date_phrases=date_phrases(list(item.dates)), roots=roots)
@@ -631,6 +661,15 @@ class Controller:
             item, hits, self.config.parsing, today=self._today(), limit=MANUAL_RESULTS
         )
         return [CandidateView.from_candidate(c) for c in ranked]
+
+    def _search_backup(self, row: dict[str, Any], text: str) -> list[CandidateView]:
+        """Manual search for a backup: the department's own folder is listed, not the index."""
+        ctx = self.config.backup_context(row["department"])
+        found = find_containing([Path(s) for s in ctx.sources], text, limit=MANUAL_RESULTS)
+        return [
+            CandidateView(None, str(f.path), "dir" if f.is_dir else "file", 0, 0, 100.0, ())
+            for f in found
+        ]
 
     def _typed_item(self, text: str) -> RequestItem:
         parsed = parse_request(text, "", self.config.parsing, today=self._today())
@@ -693,6 +732,8 @@ class Controller:
         row = self._row(request_id)
         if row["state"] not in (S.NEEDS_REVIEW, S.READY):
             raise ActionError("This request can no longer be changed")
+        if row.get("kind") == BACKUP:
+            raise ActionError("Choose the folder from the list, or browse for it")
         indexed = self.index.get(item_id)
         if indexed is None:
             raise ActionError("That content is not in the index any more; refresh the index")
@@ -705,6 +746,9 @@ class Controller:
         row = self._row(request_id)
         if row["state"] not in (S.NEEDS_REVIEW, S.READY):
             raise ActionError("This request can no longer be changed")
+        if row.get("kind") == BACKUP:
+            self._use_backup_content(row, path)
+            return
         dept = self._department(row["department"])
         found = None
         for root in self.config.roots_for(dept):
@@ -813,10 +857,153 @@ class Controller:
             )
         self._emit("changed", request_id)
 
+    # ------------------------------------------------------------------ backups
+    def _backup_detail(self, row: dict[str, Any]) -> dict[str, Any]:
+        try:
+            detail = json.loads(row.get("query_json") or "{}")
+        except ValueError:
+            detail = {}
+        return detail if isinstance(detail, dict) else {}
+
+    def _use_backup_content(self, row: dict[str, Any], path: str) -> None:
+        """The person chose the folder or file to back up (from the list, or by browsing). Where
+        it goes is worked out; if it is already in the archive the request waits for a choice."""
+        request_id = int(row["id"])
+        ctx = self.config.backup_context(row["department"])
+        try:
+            source = resolve_backup_source(ctx, path.strip())
+            plan = plan_backup(ctx, source, self._today())
+        except PathSafetyError as exc:
+            raise ActionError(f"That cannot be backed up: {exc}") from exc
+        except (OSError, ValueError) as exc:
+            raise ActionError(f"Cannot read that content: {exc}") from exc
+        detail = self._backup_detail(row)
+        detail["backup"] = {"exists": plan.exists, "overwrite": False}
+        kind = "folder" if plan.is_dir else "file"
+        detail["reason"] = (
+            f"The {kind} is already in the archive: choose what to do"
+            if plan.exists
+            else f"Chosen by {self.user_name or 'you'}"
+        )
+        fields: dict[str, Any] = {
+            "source_path": str(plan.source),
+            "confidence": 100.0,
+            "file_count": plan.file_count,
+            "total_bytes": plan.size,
+            "destination_path": str(plan.destination),
+            "query_json": json.dumps(detail),
+        }
+        if plan.exists:
+            if row["state"] == S.READY:
+                self._transition(request_id, S.NEEDS_REVIEW, reason="already in the archive",
+                                 **fields)  # fmt: skip
+            else:
+                self.repo.update_request(
+                    request_id, actor=self.user_name, reason="already in the archive", **fields
+                )
+        elif row["state"] == S.NEEDS_REVIEW:
+            self._transition(request_id, S.READY, reason="content chosen by the user", **fields)
+        else:
+            self.repo.update_request(
+                request_id, actor=self.user_name, reason="content changed by the user", **fields
+            )
+        self._emit("changed", request_id)
+
+    def archive_choice(self, request_id: int, option: str) -> None:
+        """What to do with a backup whose folder is already in the archive. ``suffix``: put it
+        next to the old one under a name with today's date; ``update``: copy into the existing
+        folder, replacing only the files that are new or changed; ``skip``: do not back it up."""
+        self._require_sign_in()
+        row = self._row(request_id)
+        detail = self._backup_detail(row)
+        if (
+            row.get("kind") != BACKUP
+            or row["state"] != S.NEEDS_REVIEW
+            or not (detail.get("backup") or {}).get("exists")
+        ):
+            raise ActionError("There is nothing to choose for this request")
+        if option == "skip":
+            self._transition(request_id, S.SKIPPED, reason="not backed up: already in the archive")
+            self._emit("changed", request_id)
+            return
+        ctx = self.config.backup_context(row["department"])
+        fields: dict[str, Any] = {}
+        if option == "suffix":
+            if not Path(str(row["source_path"])).is_dir():
+                raise ActionError(
+                    "A single file cannot be stored under a dated name; choose "
+                    "“Copy only new or changed files” or skip it"
+                )
+            try:
+                fields["destination_path"] = str(
+                    resolve_backup_destination(
+                        ctx, str(suffixed(Path(str(row["destination_path"])), self._today()))
+                    )
+                )
+            except PathSafetyError as exc:
+                raise ActionError(f"Destination not allowed: {exc}") from exc
+            detail["backup"] = {"exists": False, "overwrite": False}
+            detail["reason"] = "Will be stored next to the old copy, with today's date in its name"
+        elif option == "update":
+            detail["backup"] = {"exists": False, "overwrite": True}
+            detail["reason"] = "Only files that are new or changed will be copied into the old copy"
+        else:
+            raise ActionError("Choose one of the three options")
+        fields["query_json"] = json.dumps(detail)
+        self._transition(request_id, S.READY, reason=f"archive choice: {option}", **fields)
+        self._emit("changed", request_id)
+
+    def switch_kind(self, email_id: int, kind: str) -> str:
+        """The email was read as the wrong kind (a backup read as a share request, or the other
+        way round): read it again as ``kind``. Only while nothing was copied or finished."""
+        self._require_sign_in()
+        email = self.repo.get_email(email_id)
+        if email is None:
+            raise ActionError("This request no longer exists")
+        rows = self.repo.requests_of_email(email_id)
+        if any(r["state"] not in (S.NEEDS_REVIEW, S.READY) for r in rows):
+            raise ActionError("Some of it was already copied or finished, so it cannot be switched")
+        dept = self.config.department_for_sender(str(email["sender_email"]))
+        if kind == BACKUP and not backup_possible(self.config, dept):
+            raise ActionError(
+                "Backups are not set up for this sender: tick “Accept backup requests” for the "
+                "department (Settings → Departments), or set the archive folder and the allowed "
+                "folders (Settings → Backup)"
+            )
+        for row in rows:
+            if not self.repo.delete_unused_request(int(row["id"]), actor=self.user_name):
+                raise ActionError("Part of this request was already used, so it cannot be switched")
+        subject, body = str(email["subject"]), str(email["snippet"])
+        if kind == BACKUP:
+            ids = process_backup_requests(
+                self.repo, self.config, email_id, subject, body, today=self._today()
+            )
+        else:
+            ids = process_email_requests(
+                self.repo, self.index, self.config, email_id, subject, body, today=self._today()
+            )
+        self._emit("changed")
+        word = "a backup" if kind == BACKUP else "a request to share"
+        return f"Read again as {word}: {len(ids)} folder(s) to look at."
+
     def set_destination(self, request_id: int, path: str) -> None:
         row = self._row(request_id)
         if row["state"] not in (S.NEEDS_REVIEW, S.READY):
             raise ActionError("The destination can only be changed before approval")
+        if row.get("kind") == BACKUP:
+            ctx = self.config.backup_context(row["department"])
+            try:
+                resolved = resolve_backup_destination(ctx, path.strip())
+            except PathSafetyError as exc:
+                raise ActionError(
+                    f"The destination must be inside {ctx.archive_root}: {exc}"
+                ) from exc
+            self.repo.update_request(
+                request_id, actor=self.user_name, reason="destination edited",
+                destination_path=str(resolved),
+            )  # fmt: skip
+            self._emit("changed", request_id)
+            return
         dept = self._department(row["department"])
         try:
             resolved = resolve_destination(dept, path.strip())
@@ -851,6 +1038,8 @@ class Controller:
         if row["state"] != S.SKIPPED:
             raise ActionError("Only a skipped request can be put back")
         ready = bool(row["source_path"] and row["destination_path"])
+        if row.get("kind") == BACKUP and make_view(row).archive_exists:
+            ready = False  # it was waiting for a choice about what is already in the archive
         self._transition(
             request_id,
             S.READY if ready else S.NEEDS_REVIEW,
@@ -983,12 +1172,10 @@ class Controller:
                 "The sender could not be verified. Check the email in Gmail, then tick "
                 "“I checked this sender” to continue."
             )
-        dept = self._department(row["department"])
         if not row["source_path"] or not row["destination_path"]:
             raise ActionError("Choose the content and a destination first")
         try:
-            src = resolve_source(self.config, dept, row["source_path"])
-            dst = resolve_destination(dept, row["destination_path"])
+            src, dst = self._resolve_paths(row)
         except PathSafetyError as exc:
             raise ActionError(f"Path not allowed: {exc}") from exc
         if paths_overlap(src, dst):
@@ -1015,6 +1202,20 @@ class Controller:
         self._emit("changed", request_id)
         return ApproveResult(started=True, note=note)
 
+    def _resolve_paths(self, row: dict[str, Any]) -> tuple[Path, Path]:
+        """The checked source and destination of a request (``PathSafetyError`` if not allowed)."""
+        if row.get("kind") == BACKUP:
+            ctx = self.config.backup_context(row["department"])
+            return (
+                resolve_backup_source(ctx, row["source_path"]),
+                resolve_backup_destination(ctx, row["destination_path"]),
+            )
+        dept = self._department(row["department"])
+        return (
+            resolve_source(self.config, dept, row["source_path"]),
+            resolve_destination(dept, row["destination_path"]),
+        )
+
     def auto_copy_certain(self) -> list[int]:
         """With the setting on: copy (and so reply to) every request that is Ready, from a
         verified sender and matched at exactly 100%. A request that cannot be copied stays Ready
@@ -1025,6 +1226,8 @@ class Controller:
         for row in self.repo.list_requests([S.READY]):
             if row["auth_status"] != "verified" or float(row.get("confidence") or 0) < 100:
                 continue
+            if row.get("kind") == BACKUP:
+                continue  # a backup always waits for a person
             try:
                 self.approve(int(row["id"]), confirmed=True, automatic=True)
             except ActionError as exc:

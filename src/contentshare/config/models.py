@@ -5,12 +5,14 @@ from __future__ import annotations
 import ntpath
 import os
 import re
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from contentshare.config.templates import (
+    DEFAULT_BACKUP_REPLY_TEMPLATE,
     DEFAULT_REPLY_TEMPLATE,
     REPLY_PLACEHOLDERS,
     SUBFOLDER_PLACEHOLDERS,
@@ -66,6 +68,15 @@ def _check_root(value: str) -> str:
     return value.rstrip("\\/") if len(value.rstrip("\\/")) > 2 else value
 
 
+def _subfolder_pattern(value: str) -> str:
+    validate_template(value, SUBFOLDER_PLACEHOLDERS)
+    if re.match(r"^([A-Za-z]:|[\\/])", value) or ".." in re.split(r"[\\/]", value):
+        raise ValueError("Subfolder pattern must be relative and must not contain '..'")
+    if not value.strip():
+        raise ValueError("Subfolder pattern must not be empty")
+    return value
+
+
 OPEN_DEPARTMENT = "No department"
 
 
@@ -94,6 +105,41 @@ class Department(BaseModel):
     # True: when the emails of this department do not contain exact folder names, the local
     # language model reads them too (only while Settings → Smart reading is on).
     use_local_llm: bool = False
+    # Backup requests: the department says "we kept this on our server, please back it up". The
+    # copy then goes the other way, from the department's own server into the archive.
+    backup_enabled: bool = False
+    backup_source: str = ""  # the department's server folder the content is read from
+    backup_archive: str = ""  # where backups go; empty: the general archive folder is used
+    backup_subfolder: str = "{program}"
+    backup_reply_template: str | None = None
+
+    @field_validator("backup_source", "backup_archive")
+    @classmethod
+    def _backup_folder(cls, value: str) -> str:
+        value = value.strip()
+        return _check_root(value) if value else ""
+
+    @field_validator("backup_archive")
+    @classmethod
+    def _backup_archive_safe(cls, value: str) -> str:
+        protected = inside_system_folder(value) if value else None
+        if protected:
+            raise ValueError(f"Backups must not go into a Windows system folder ({protected})")
+        return value
+
+    @field_validator("backup_subfolder")
+    @classmethod
+    def _backup_pattern(cls, value: str) -> str:
+        return _subfolder_pattern(value)
+
+    @field_validator("backup_reply_template")
+    @classmethod
+    def _backup_reply(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            return None
+        if value is not None:
+            validate_template(value, REPLY_PLACEHOLDERS)
+        return value
 
     @property
     def may_pick_anywhere(self) -> bool:
@@ -146,12 +192,7 @@ class Department(BaseModel):
     @field_validator("subfolder_pattern")
     @classmethod
     def _pattern(cls, value: str) -> str:
-        validate_template(value, SUBFOLDER_PLACEHOLDERS)
-        if re.match(r"^([A-Za-z]:|[\\/])", value) or ".." in re.split(r"[\\/]", value):
-            raise ValueError("Subfolder pattern must be relative and must not contain '..'")
-        if not value.strip():
-            raise ValueError("Subfolder pattern must not be empty")
-        return value
+        return _subfolder_pattern(value)
 
     @field_validator("reply_template")
     @classmethod
@@ -165,6 +206,20 @@ class Department(BaseModel):
     def _has_sender(self) -> Department:
         if not self.sender_emails and not self.sender_domains:
             raise ValueError("A department needs at least one sender email or domain")
+        if self.backup_enabled and not self.backup_source:
+            raise ValueError(
+                f"{self.name}: backups are on, so say which folder on the department's server "
+                "the content is read from"
+            )
+        if (
+            self.backup_source
+            and self.backup_archive
+            and paths_overlap(self.backup_source, self.backup_archive)
+        ):
+            raise ValueError(
+                f"{self.name}: the backup folder and the archive folder are the same or inside "
+                "each other"
+            )
         return self
 
     def matches_sender(self, email: str) -> bool:
@@ -416,6 +471,79 @@ class DevSettings(BaseModel):
     include_mail_text: bool = False  # the copied diagnostics also hold the mail text
 
 
+class BackupSettings(BaseModel):
+    """Backups for senders that are in no department, and the general defaults."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    # Where a backup goes when the department has no archive folder of its own, and the only
+    # place for a sender in no department. Empty: such senders cannot ask for a backup.
+    archive_root: str = ""
+    # The servers a sender in no department may ask to have read (their email names the folder;
+    # it is only used when it lies inside one of these).
+    allowed_sources: list[str] = Field(default_factory=list)
+    subfolder: str = "{program}"
+    reply_template: str = DEFAULT_BACKUP_REPLY_TEMPLATE
+
+    @field_validator("archive_root")
+    @classmethod
+    def _archive(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            return ""
+        value = _check_root(value)
+        protected = inside_system_folder(value)
+        if protected:
+            raise ValueError(f"Backups must not go into a Windows system folder ({protected})")
+        return value
+
+    @field_validator("allowed_sources")
+    @classmethod
+    def _sources(cls, values: list[str]) -> list[str]:
+        out: list[str] = []
+        for value in values:
+            checked = _check_root(value.strip())
+            if all(_key(checked) != _key(seen) for seen in out):
+                out.append(checked)
+        return out
+
+    @field_validator("subfolder")
+    @classmethod
+    def _subfolder(cls, value: str) -> str:
+        return _subfolder_pattern(value)
+
+    @field_validator("reply_template")
+    @classmethod
+    def _reply(cls, value: str) -> str:
+        validate_template(value, REPLY_PLACEHOLDERS)
+        return value
+
+    @model_validator(mode="after")
+    def _apart(self) -> BackupSettings:
+        for source in self.allowed_sources:
+            if self.archive_root and paths_overlap(source, self.archive_root):
+                raise ValueError(
+                    f"The allowed backup folder {source} and the archive folder are the same or "
+                    "inside each other"
+                )
+        return self
+
+
+@dataclass(frozen=True)
+class BackupContext:
+    """Where one sender's backups are read from and written to."""
+
+    department: str | None  # None: a sender in no department
+    sources: tuple[str, ...]
+    archive_root: str
+    subfolder: str
+    reply_template: str
+
+    @property
+    def usable(self) -> bool:
+        return bool(self.sources) and bool(self.archive_root)
+
+
 class AppConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -429,6 +557,7 @@ class AppConfig(BaseModel):
     matching: MatchSettings = Field(default_factory=MatchSettings)
     parsing: ParsingSettings = Field(default_factory=ParsingSettings)
     index: IndexSettings = Field(default_factory=IndexSettings)
+    backup: BackupSettings = Field(default_factory=BackupSettings)
     gmail: GmailSettings = Field(default_factory=GmailSettings)
     smart: SmartSettings = Field(default_factory=SmartSettings)
     dev: DevSettings = Field(default_factory=DevSettings)
@@ -528,6 +657,41 @@ class AppConfig(BaseModel):
                         f"The folders of '{first.name}' and '{second.name}' are the same or "
                         "inside each other. Each department needs its own folder."
                     )
+        # The archive is where backups land (it is usually inside the storage folders, so that
+        # backed-up content can be shared later), but it must not be a folder copies are sent to.
+        for dept in self.departments:
+            if dept.backup_enabled and not self.backup_context(dept.name).archive_root:
+                raise ValueError(
+                    f"{dept.name}: backups are on, but there is no archive folder. Set one for the "
+                    "department, or the general archive folder in Settings."
+                )
+            archive = self.backup_context(dept.name).archive_root
+            for other in self.departments:
+                if archive and paths_overlap(archive, other.destination_root):
+                    raise ValueError(
+                        f"The archive folder ({archive}) overlaps the folder '{other.name}' "
+                        "copies go to. Keep them apart."
+                    )
+
+    def backup_context(self, name: str | None) -> BackupContext:
+        """The folders for a backup request from this department (None: a sender in no
+        department, who may only use the general archive and the allowed backup folders)."""
+        dept = next((d for d in self.departments if d.name == name), None) if name else None
+        if dept is None:
+            return BackupContext(
+                None,
+                tuple(self.backup.allowed_sources),
+                self.backup.archive_root,
+                self.backup.subfolder,
+                self.backup.reply_template,
+            )
+        return BackupContext(
+            dept.name,
+            (dept.backup_source,) if dept.backup_enabled and dept.backup_source else (),
+            dept.backup_archive or self.backup.archive_root,
+            dept.backup_subfolder,
+            dept.backup_reply_template or self.backup.reply_template,
+        )
 
     def department_for_sender(self, email: str) -> Department | None:
         """Exact email matches win over domain matches."""

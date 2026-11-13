@@ -34,6 +34,7 @@ _UPDATABLE = frozenset(
         "auto_reply",
         "failure_reason",
         "query_json",
+        "kind",
     }
 )
 
@@ -349,15 +350,24 @@ class Repository:
 
     # --- requests --------------------------------------------------------------
     def add_request(
-        self, email_id: int, line_no: int, query: dict[str, Any], *, auto_reply: bool = False
+        self,
+        email_id: int,
+        line_no: int,
+        query: dict[str, Any],
+        *,
+        auto_reply: bool = False,
+        kind: str = "share",
     ) -> int:
         now = _now()
         with self.db.transaction() as conn:
             cur = conn.execute(
                 "INSERT INTO requests (email_id, line_no, query_json, auto_reply, state, "
-                "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                (email_id, line_no, json.dumps(query), int(auto_reply), RequestState.NEW, now, now),
-            )
+                "created_at, updated_at, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    email_id, line_no, json.dumps(query), int(auto_reply), RequestState.NEW,
+                    now, now, kind,
+                ),
+            )  # fmt: skip
             request_id = int(cur.lastrowid or 0)
             # Only ids go in the audit log: what the email said stays out of it.
             self._audit(

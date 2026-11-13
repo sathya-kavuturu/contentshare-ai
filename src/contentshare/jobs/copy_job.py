@@ -3,6 +3,7 @@ moves the request to VERIFIED or FAILED. A copy failure never leads to a "shared
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections.abc import Callable
@@ -30,6 +31,7 @@ from contentshare.copy_engine import (
     copy_tree,
 )
 from contentshare.jobs.states import RequestState
+from contentshare.matching.backup import resolve_backup_destination, resolve_backup_source
 from contentshare.security.paths import (
     PathSafetyError,
     resolve_anywhere,
@@ -99,6 +101,16 @@ def resolve_destination(dept: Department, text: str) -> Path:
     return path
 
 
+def _replace_existing(row: dict[str, object]) -> bool:
+    """The person chose, for a backup of something already in the archive, to bring in only the
+    files that are new or changed."""
+    try:
+        detail = json.loads(str(row.get("query_json") or "{}"))
+        return bool(detail.get("backup", {}).get("overwrite"))
+    except (ValueError, AttributeError):
+        return False
+
+
 def paths_overlap(a: Path, b: Path) -> bool:
     a_s, b_s = str(a).casefold().rstrip("\\"), str(b).casefold().rstrip("\\")
     return a_s == b_s or a_s.startswith(b_s + "\\") or b_s.startswith(a_s + "\\")
@@ -165,12 +177,17 @@ class CopyJobRunner:
         row = self.repo.get_request(request_id)
         if row is None:
             raise KeyError(f"No request {request_id}")
-        dept = self._department(row["department"])
         if not row["source_path"] or not row["destination_path"]:
             raise ValueError("Request has no source or destination path")
 
-        src = resolve_source(self.config, dept, row["source_path"])
-        dst = resolve_destination(dept, row["destination_path"])
+        if row.get("kind") == "backup":  # a department's own content into the archive
+            ctx = self.config.backup_context(row["department"])
+            src = resolve_backup_source(ctx, row["source_path"])
+            dst = resolve_backup_destination(ctx, row["destination_path"])
+        else:
+            dept = self._department(row["department"])
+            src = resolve_source(self.config, dept, row["source_path"])
+            dst = resolve_destination(dept, row["destination_path"])
         if paths_overlap(src, dst):
             raise PathSafetyError("Source and destination overlap")
 
@@ -181,6 +198,13 @@ class CopyJobRunner:
                 request_id, algorithm
             ).items()
         }
+        plan = build_plan(src, dst)
+        if _replace_existing(
+            row
+        ):  # "copy only new or changed files": a file that differs is replaced
+            overwrite = overwrite | frozenset(
+                e.rel for e in plan.files if (dst / e.rel).is_file()
+            )  # identical files are still skipped by the copy: only differing ones are replaced
         options = options_from_config(self.config, overwrite=overwrite, trusted=trusted)
         cleanup_partials(dst)  # leftovers from a crash
         self.repo.log("system", "copy_started", request_id, src=str(src), dst=str(dst),
@@ -199,7 +223,6 @@ class CopyJobRunner:
                 error=result.error,
             )
 
-        plan = build_plan(src, dst)
         tree = copy_tree(plan, options, control, progress=progress, sleep=self.sleep,
                          on_file_done=journal)  # fmt: skip
         return self._conclude(request_id, job_id, tree)

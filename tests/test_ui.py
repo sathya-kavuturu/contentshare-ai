@@ -188,10 +188,11 @@ def test_ready_card_shows_everything_the_wireframe_promises(rig: Rig) -> None:
     assert "Anita R." in texts and "Media Team" in texts
     assert "SunriseTalk_EN" in texts and "confidence" in texts
     assert "copy to" in texts.lower()  # the small heading above the destination
-    assert [b.text() for b in card.findChildren(QPushButton) if b.text()][:5] == [
+    assert [b.text() for b in card.findChildren(QPushButton) if b.text()][:6] == [
         "▾",  # the arrow that folds the card
         "↻",  # look the folders up again
         "Ask model",  # ask the local model
+        "This is a backup",  # read the email as a backup instead
         "▸ Show text",
         "Change content…",
     ]

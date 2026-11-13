@@ -196,6 +196,11 @@ MIGRATIONS: list[str] = [
         created_at TEXT NOT NULL
     );
     """,
+    # --- v9: a request is a share (archive to a department) or a backup (a department's own
+    #         content into the archive) ---
+    """
+    ALTER TABLE requests ADD COLUMN kind TEXT NOT NULL DEFAULT 'share';
+    """,
 ]
 
 

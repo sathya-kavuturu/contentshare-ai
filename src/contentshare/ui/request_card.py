@@ -259,6 +259,13 @@ class RequestCard(QFrame):
         head.addWidget(title, 1)
         text, tone = group_status(group)
         self.status = _chip(text, tone)
+        if v.is_backup:
+            badge = _chip("Backup", "info")
+            badge.setToolTip(
+                "This email asks for a backup: the content is read from the department's own "
+                "folder and copied into the archive."
+            )
+            head.addWidget(badge)
         head.addWidget(self.status)
         self.refresh_button = _button("↻", self._refresh)
         self.refresh_button.setToolTip(
@@ -272,10 +279,22 @@ class RequestCard(QFrame):
             "(needs the smart reading model, Settings → Smart reading)."
         )
         self.ask_button.setAccessibleName(f"Ask the local model about request {v.id}")
-        for button in (self.refresh_button, self.ask_button):
+        other = "share" if v.is_backup else "backup"
+        self.kind_button = _button(
+            "Not a backup" if v.is_backup else "This is a backup", partial(self._switch_kind, other)
+        )
+        self.kind_button.setToolTip(
+            "Read this email again as a request to share content, not a backup"
+            if v.is_backup
+            else "Read this email again as a backup: from the department's folder into the archive"
+        )
+        self.kind_button.setAccessibleName(f"Change the kind of request {v.id}")
+        for button in (self.refresh_button, self.ask_button, self.kind_button):
             button.setFlat(True)
             self._buttons.append(button)
             head.addWidget(button)
+        # only while nothing has been copied: after that the kind can no longer change
+        self.kind_button.setVisible(all(i.state in _CAN_REJECT for i in group.items))
         root.addLayout(head)
 
         # Folded: just who asked and for which department, under the title.
@@ -376,7 +395,48 @@ class RequestCard(QFrame):
             "VERIFIED": self._verified_section,
         }.get(v.state, self._finished_section)(root, v)
 
+    def _archive_choice(self, root: QVBoxLayout, v: RequestView) -> None:
+        """A backup whose folder is already in the archive: what is found, where it would go, and
+        what to do about it (never decided for the person)."""
+        box = _inset()
+        grid = QGridLayout(box)
+        grid.setContentsMargins(14, 12, 14, 12)
+        grid.setHorizontalSpacing(14)
+        grid.setColumnStretch(1, 1)
+        grid.addWidget(_label("READ FROM", "section", wrap=False), 0, 0)
+        grid.addWidget(_label(v.source_path or "", "path", wrap=False), 0, 1)
+        grid.addWidget(_label("ALREADY IN", "section", wrap=False), 1, 0)
+        grid.addWidget(_label(v.destination_path or "", "path", wrap=False), 1, 1)
+        grid.addWidget(_label(f"{v.size_text} · {v.file_count} file(s)", "small", wrap=False), 2, 1)
+        root.addWidget(box)
+        suffix = _button("Keep both (add today's date)", partial(self._archive_option, v, "suffix"))
+        suffix.setToolTip("Store it next to the old one under a name that ends with today's date")
+        update = _button(
+            "Copy only new or changed files", partial(self._archive_option, v, "update")
+        )
+        update.setToolTip("Copy into the old folder: files that differ are replaced, the rest kept")
+        skip = _button("Skip", partial(self._archive_option, v, "skip"))
+        skip.setToolTip("Do not back this up")
+        self._item_buttons(root, suffix, update, skip)
+
+    def _archive_option(self, view: RequestView, option: str) -> None:
+        try:
+            self.ctx.controller.archive_choice(view.id, option)
+        except Exception as exc:
+            self.ctx.fail(self, "Cannot do that", exc)
+
+    def _switch_kind(self, kind: str) -> None:
+        self._busy(True)
+        self.ctx.bridge.work(
+            lambda: self.ctx.controller.switch_kind(self.view.email_id, kind),
+            on_done=lambda message: self.ctx.say(str(message)),
+            on_error=self._on_error("Cannot change that"),
+        )
+
     def _review_section(self, root: QVBoxLayout, v: RequestView) -> None:
+        if v.archive_exists:
+            self._archive_choice(root, v)
+            return
         choices = v.candidates
         if choices:
             title = f"{len(choices)} PATHS TO CHOOSE FROM" if len(choices) > 1 else "TOP MATCH"
@@ -425,7 +485,12 @@ class RequestCard(QFrame):
             )
         )
         row.addLayout(text, 1)
-        use = _button("Use this", partial(self._choose, v, candidate.item_id))
+        use = _button(
+            "Use this",
+            partial(self._choose_path, v, candidate.path)
+            if v.is_backup
+            else partial(self._choose, v, candidate.item_id),
+        )
         use.setAccessibleName(f"Use {candidate.path}")
         self._buttons.append(use)
         row.addWidget(use, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -438,9 +503,11 @@ class RequestCard(QFrame):
         grid.setHorizontalSpacing(14)
         grid.setVerticalSpacing(8)
         grid.setColumnStretch(1, 1)
-        grid.addWidget(_label("FOUND", "section", wrap=False), 0, 0)
+        grid.addWidget(_label("READ FROM" if v.is_backup else "FOUND", "section", wrap=False), 0, 0)
         grid.addWidget(_label(v.source_path or "", "path", wrap=False), 0, 1)
-        grid.addWidget(_label("COPY TO", "section", wrap=False), 1, 0)
+        grid.addWidget(
+            _label("BACK UP TO" if v.is_backup else "COPY TO", "section", wrap=False), 1, 0
+        )
         grid.addWidget(_label(v.destination_path or "", "path", wrap=False), 1, 1)
         grid.addWidget(
             _label(
@@ -632,6 +699,9 @@ class RequestCard(QFrame):
     def _start_folder(self) -> str:
         """Where the Browse windows open: the department's first storage folder."""
         config = self.ctx.controller.config
+        if self.view.is_backup:
+            sources = config.backup_context(self.view.department).sources
+            return sources[0] if sources else ""
         dept = next((d for d in config.departments if d.name == self.view.department), None)
         roots = config.roots_for(dept)
         return roots[0] if roots else ""
@@ -710,6 +780,15 @@ class RequestCard(QFrame):
         )
 
     def _edit_destination(self, view: RequestView) -> None:
+        if view.is_backup:
+            ctx = self.ctx.controller.config.backup_context(view.department)
+            dialog = DestinationDialog(ctx.archive_root, view.destination_path or "", self)
+            if dialog.exec():
+                try:
+                    self.ctx.controller.set_destination(view.id, dialog.value())
+                except Exception as exc:
+                    self.ctx.fail(self, "Cannot use that folder", exc)
+            return
         dept = self.ctx.controller.config.department_for(view.department)
         if dept is None:
             QMessageBox.warning(

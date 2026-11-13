@@ -27,6 +27,14 @@ DEFAULT_REPLY_TEMPLATE = (
     "Total: {file_text}, {total_size}.\n\n"
     "Please let me know if anything is missing.\n"
 )
+# The reply for a backup: a department gave its own content to the central archive.
+DEFAULT_BACKUP_REPLY_TEMPLATE = (
+    "Hello {requester_name},\n\n"
+    "The following has been backed up to the archives and checked against the original:\n\n"
+    "{folders}\n\n"
+    "Total: {file_text}, {total_size}.\n\n"
+    "Please let me know if anything is missing.\n"
+)
 # The wording used before; a saved setting that still has it moves to the new wording.
 LEGACY_REPLY_TEMPLATE = (
     "Hello {requester_name},\n\n"

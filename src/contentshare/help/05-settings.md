@@ -87,6 +87,11 @@ senders are ever read. Use **Add…**, **Edit…** (or double-click) and **Remov
 | **Folder names** | Tick **The emails give exact folder names** for a department whose requests name the folder exactly as it is on the storage server (one name per line, in a list, or in quotes). ContentShare then looks for folders (or, failing that, files) with exactly those names (capital letters do not matter; a date written before the name, such as `Nov 22-28`, is ignored) and nothing is guessed: one folder of that name is **Ready**, several are **Needs review** so you pick one, and a name that is not found says so. Whatever this is set to, a line that is exactly a folder's name is found as that folder. Leave it off for a department whose emails are free-form: you get the closest matches, and you can **Browse for a folder…** yourself. |
 | **Subfolder** | How each program's folder is named inside it. Default `{program}`. A single file is copied straight into the department's folder, without a subfolder. You can also use `{date}` and `{department}`. |
 | **Reply text** | This department's own reply. Leave empty to use the default. |
+| **Accept backup requests from this department** | Off by default. On: an email from this department that says it kept something on its own server and asks for a **backup** is read the other way round (see *Backup* below). |
+| **Backup from** | The folder on the department's own server that the content is read from. Required when backups are on. |
+| **Back up into** | Where this department's backups are stored. Leave empty to use the general **Archive folder** (*Settings → Backup*). |
+| **Backup subfolder** | How each backed-up folder is named inside the archive. Default `{program}`; `{date}` and `{department}` also work. |
+| **Backup reply** | This department's own reply for a finished backup. Leave empty to use the default backup reply. |
 
 ## Gmail
 
@@ -144,5 +149,29 @@ previous index if a scan fails.
 |---|---|
 | **Refresh Index Daily** | Tick it to read the server again every day. Untick it to refresh only by hand. |
 | **Refresh at** | The time of day (24 hours, for example 03:00) the daily refresh runs. Pick a quiet hour. If the app was closed at that time, it refreshes when it is next running. |
+
+## Backup
+
+A **backup** is the other way round from a normal request. A department says "we kept this on our
+server, please back it up". ContentShare then reads the folder they name from the **department's
+own server** and copies it, verified, into the **archive**. The department's folder is never
+changed, and every backup waits for you to approve it (it is never copied by itself).
+
+An email is read as a backup when it says so ("back it up", "backup", "archive it") and the
+department has backups switched on. If it was read the wrong way, **This is a backup** or **Not a
+backup** on the card reads it again the other way. A path written in the email is only a hint: it
+is used only inside the department's backup folder (or the allowed folders below).
+
+If the folder is **already in the archive**, nothing is decided for you. The card asks: **Keep
+both** (the new one is stored under a name that ends with today's date), **Copy only new or
+changed files** (into the old folder: files that differ are replaced, the rest are kept), or
+**Skip**.
+
+| Setting | What it does |
+|---|---|
+| **Archive folder** | Where a backup goes when its department has no archive folder of its own. Without it, people in no department cannot ask for a backup. |
+| **Allowed folders** | For people in no department: the servers they may ask to have read. A folder written in their email is used only inside one of these; otherwise you choose the folder yourself with Browse. Their requests always wait for you. |
+| **Subfolder** | How a backed-up folder is named inside the archive (default `{program}`). |
+| **Backup reply** | The reply sent when a backup is verified. It can use the same blanks as the reply text above. |
 
 [Back to Getting started](help:start)

@@ -193,6 +193,9 @@ class CandidateDialog(QDialog):
 
     def _start_folder(self) -> str:
         config = self._controller.config
+        if self._view.is_backup:  # a backup is read from the department's own folder
+            sources = config.backup_context(self._view.department).sources
+            return sources[0] if sources else ""
         dept = config.department_for(self._view.department)
         roots = config.roots_for(dept)
         return roots[0] if roots else ""
@@ -212,6 +215,10 @@ class CandidateDialog(QDialog):
             self._browsed_pick(chosen)
 
     def _pick_hint(self) -> str:
+        if self._view.is_backup:
+            if self._view.department is None:
+                return "Your pick is first. For a sender in no department it can be anywhere."
+            return "Your pick is first. It must be inside the department's backup folder."
         dept = self._controller.config.department_for(self._view.department)
         if dept is not None and dept.may_pick_anywhere:
             return "Your pick is first. It can be anywhere on this PC or network."

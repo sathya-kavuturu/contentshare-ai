@@ -86,6 +86,17 @@ OWN_FOLDERS_HINT = (
     "The server, drive or folder this department's content is kept in. Only these are searched "
     "for its requests. Leave the list empty to use the storage folders from General."
 )
+BACKUP_HINT = (
+    "For emails that say “we kept this on our server, please back it up”: the content is "
+    "read from the department's own folder and copied into the archive (the other way round from "
+    "a normal request). The department's folder is never changed. Every backup waits for you to "
+    "approve it."
+)
+BACKUP_SOURCE_HINT = "The folder on the department's server that holds the content to back up."
+BACKUP_ARCHIVE_HINT = (
+    "Where this department's backups are stored. Leave empty to use the general archive folder "
+    "(Settings → Backup)."
+)
 LLM_HINT = (
     "When an email has no lines that are exactly folder names, the model on this PC reads it and "
     "suggests the names. Works only while Settings → Smart reading is on; if the model cannot "
@@ -174,6 +185,15 @@ class DepartmentDialog(QDialog):
         form.addRow("Local model", with_hint(self.use_llm, LLM_HINT))
         form.addRow("Subfolder", self.pattern)
         form.addRow("Reply text", self.reply)
+        form.addRow("Backups", with_hint(self.backup_on, BACKUP_HINT))
+        form.addRow(
+            "Backup from", with_hint(self._folder_row(self.backup_source), BACKUP_SOURCE_HINT)
+        )
+        form.addRow(
+            "Back up into", with_hint(self._folder_row(self.backup_archive), BACKUP_ARCHIVE_HINT)
+        )
+        form.addRow("Backup subfolder", self.backup_pattern)
+        form.addRow("Backup reply", self.backup_reply)
         page = QWidget()
         page_layout = QVBoxLayout(page)
         page_layout.addLayout(form)
@@ -223,6 +243,34 @@ class DepartmentDialog(QDialog):
         self.use_llm = QCheckBox("Also read this department's emails with the local model")
         self.use_llm.setAccessibleName("Use the local model")
         self.use_llm.setChecked(bool(d and d.use_local_llm))
+        self.backup_on = QCheckBox("Accept backup requests from this department")
+        self.backup_on.setAccessibleName("Accept backup requests")
+        self.backup_on.setChecked(bool(d and d.backup_enabled))
+        self.backup_source = QLineEdit(d.backup_source if d else "")
+        self.backup_source.setPlaceholderText(r"\\server\share\Department folder")
+        self.backup_source.setAccessibleName("Backup from")
+        self.backup_archive = QLineEdit(d.backup_archive if d else "")
+        self.backup_archive.setPlaceholderText(r"\\archives\Central\Department (or empty)")
+        self.backup_archive.setAccessibleName("Back up into")
+        self.backup_pattern = QLineEdit(d.backup_subfolder if d else "{program}")
+        self.backup_reply = QPlainTextEdit(d.backup_reply_template or "" if d else "")
+        self.backup_reply.setPlaceholderText("Leave empty to use the default backup reply")
+        self.backup_reply.setFixedHeight(80)
+
+    def _folder_row(self, edit: QLineEdit) -> QWidget:
+        holder = QWidget()
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(0, 0, 0, 0)
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(lambda: self._browse_into(edit))
+        row.addWidget(edit, 1)
+        row.addWidget(browse)
+        return holder
+
+    def _browse_into(self, edit: QLineEdit) -> None:
+        chosen = choose_folder(self, "Choose a folder")
+        if chosen:
+            edit.setText(chosen)
 
     def _root_row(self) -> QHBoxLayout:
         browse = QPushButton("Browse…")
@@ -251,6 +299,11 @@ class DepartmentDialog(QDialog):
                 source_roots=self.folders.paths(),
                 search_whole_pc=self.whole_pc.isChecked(),
                 use_local_llm=self.use_llm.isChecked(),
+                backup_enabled=self.backup_on.isChecked(),
+                backup_source=self.backup_source.text().strip(),
+                backup_archive=self.backup_archive.text().strip(),
+                backup_subfolder=self.backup_pattern.text().strip() or "{program}",
+                backup_reply_template=self.backup_reply.toPlainText().strip() or None,
             )
         except ValidationError as exc:
             QMessageBox.warning(self, "Check the department", explain_validation(exc))
@@ -311,6 +364,7 @@ class SettingsPage(QWidget):
         self._build_smart()
         self._build_matching()
         self._build_index()
+        self._build_backup()
         bar = QHBoxLayout()
         self.message = QLabel()
         self.message.setProperty("role", "muted")
@@ -634,6 +688,52 @@ class SettingsPage(QWidget):
         note.setProperty("role", "muted")
         form.addRow("", note)
 
+    def _build_backup(self) -> None:
+        """Backups for senders in no department, and the default archive folder."""
+        form = self._tab("Backup")
+        note = QLabel(
+            "A backup is the other way round from a normal request: a department says it kept "
+            "content on its own server and asks for it to be saved in the archive. Turn backups "
+            "on for a department under Departments. These settings are for departments that have "
+            "no archive folder of their own, and for people in no department."
+        )
+        note.setWordWrap(True)
+        note.setProperty("role", "muted")
+        form.addRow("", note)
+        self.backup_archive = QLineEdit()
+        self.backup_archive.setAccessibleName("General archive folder")
+        self.backup_archive.setPlaceholderText(r"\\archives\Central\Backups")
+        browse = QPushButton("Browse…")
+        browse.clicked.connect(self._browse_archive)
+        row = QWidget()
+        box = QHBoxLayout(row)
+        box.setContentsMargins(0, 0, 0, 0)
+        box.addWidget(self.backup_archive, 1)
+        box.addWidget(browse)
+        form.addRow(
+            "Archive folder",
+            with_hint(row, "Where a backup goes when its department has no archive folder of its "
+                           "own. Without it, people in no department cannot ask for a backup."),
+        )  # fmt: skip
+        self.backup_sources = FolderList(dialog_title="Choose a folder backups may be read from")
+        self.backup_sources.setMinimumHeight(110)
+        form.addRow(
+            "Allowed folders",
+            with_hint(self.backup_sources, "For people in no department: the servers they may ask "
+                      "to have read. A folder written in their email is used only when it is "
+                      "inside one of these; otherwise you choose the folder yourself."),
+        )  # fmt: skip
+        self.backup_pattern = QLineEdit()
+        form.addRow("Subfolder", self.backup_pattern)
+        self.backup_reply = QPlainTextEdit()
+        self.backup_reply.setFixedHeight(120)
+        form.addRow("Backup reply", self.backup_reply)
+
+    def _browse_archive(self) -> None:
+        chosen = choose_folder(self, "Choose the archive folder")
+        if chosen:
+            self.backup_archive.setText(chosen)
+
     # ------------------------------------------------------------------ load / save
     def show_page(self) -> None:
         """The Settings tab was opened. The boxes are filled again only if the settings changed
@@ -680,6 +780,10 @@ class SettingsPage(QWidget):
         self.dev_mode.setChecked(c.dev.enabled)
         self.check_updates.setChecked(c.updates.check_on_start)
         self.folders.set_paths(c.source_roots)
+        self.backup_archive.setText(c.backup.archive_root)
+        self.backup_sources.set_paths(c.backup.allowed_sources)
+        self.backup_pattern.setText(c.backup.subfolder)
+        self.backup_reply.setPlainText(c.backup.reply_template)
         self.default_reply.setPlainText(c.default_reply_template)
         self.departments = [d.model_copy() for d in c.departments]
         self._fill_departments()
@@ -725,6 +829,14 @@ class SettingsPage(QWidget):
         base["dev"]["enabled"] = self.dev_mode.isChecked()
         base["updates"]["check_on_start"] = self.check_updates.isChecked()
         base["source_roots"] = self.folders.paths()
+        base["backup"] = {
+            "archive_root": self.backup_archive.text().strip(),
+            "allowed_sources": self.backup_sources.paths(),
+            "subfolder": self.backup_pattern.text().strip() or "{program}",
+            "reply_template": self.backup_reply.toPlainText()
+            if self.backup_reply.toPlainText().strip()
+            else base["backup"]["reply_template"],
+        }
         typed = self.default_reply.toPlainText()
         if not typed.strip():
             raise ValueError("The default reply text must not be empty")
@@ -877,6 +989,7 @@ class SettingsPage(QWidget):
             names += " · local model" if d.use_local_llm else ""
             searches = "; ".join(d.source_roots) if d.source_roots else "General storage folders"
             searches += " · then this PC" if d.search_whole_pc else ""
+            searches += " · backups on" if d.backup_enabled else ""
             for col, text in enumerate([d.name, senders, d.destination_root, names, searches]):
                 self.dept_table.setItem(row, col, QTableWidgetItem(text))
 
